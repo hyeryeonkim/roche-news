@@ -7,7 +7,7 @@ from time import mktime
 from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard (질환 서브타입 정교화 엔진)")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
 # 1. 수집 매체 리스트 (28개 전체 매체)
 ALL_MEDIA_LIST = [
@@ -84,7 +84,7 @@ INDUSTRY_SINGLE_KEYWORDS = [
 
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
-    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원", "건기식", "건강기능식품", "화장품", "뷰티", "요양병원"
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
 ROCHE_DISEASE_AREAS = [
@@ -135,12 +135,11 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# [폐암 & 유방암 서브타입 가감점 로직이 탑재된 점수 계산 함수]
+# 점수 계산 함수
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
-    # 1. 카테고리별 기본 스코어링
     if category == "Corporate News":
         score += 4
         if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 2
@@ -159,52 +158,33 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 
     elif category == "Industry/ Policy News":
         score += 2
-        if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]):
-            score += 2
-        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]):
-            score += 2
+        if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]): score += 2
+        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]): score += 2
         if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
-            if any(policy in full_text for policy in ["정책", "개편", "가이드라인", "고시", "제도", "인사"]):
-                score += 1
+            if any(policy in full_text for policy in ["정책", "개편", "가이드라인", "고시", "제도", "인사"]): score += 1
         if any(mNC in full_text for mNC in ["다국적", "글로벌", "외자사", "KRPIA"]):
-            if any(m_evt in full_text for m_evt in ["약가", "규제", "제도", "인사", "CSR"]):
-                score += 1
+            if any(m_evt in full_text for m_evt in ["약가", "규제", "제도", "인사", "CSR"]): score += 1
         if any(pt in full_text for pt in ["환자단체", "환우회", "환자"]):
             if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS): score += 2
             if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS): score -= 2
 
-    # 2. 제목(Title) 가중치
     if category == "Industry/ Policy News":
-        if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]):
-            score += 2
+        if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]): score += 2
     else:
-        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]):
-            score += 2
+        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]): score += 2
 
-    # 3. [폐암 변이 가감점] (ALK/KRAS +2점, EGFR/ROS -2점)
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
 
-    # 4. ★ [유방암 서브타입 정교화 가감점] (HER2+, PIK3CA HR+ vs TNBC) ★
     if re.search(r"유방암", full_text, re.I):
-        # [A] HER2 양성 유방암 가점 (+2점)
-        if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I):
-            score += 2
-
-        # [B] HR 양성 / HER2 음성 유방암 (이토베비 / PIK3CA / 피크레이 / 티루캡 연관 시만 가점 +2점)
+        if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
         if re.search(r"HR\+|HR양성|호르몬\s*양성|호르몬\s*수용체", full_text, re.I):
-            if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I):
-                score += 2
+            if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
+        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 2
 
-        # [C] 삼중음성유방암 (TNBC) 감점 (-2점)
-        if re.search(r"삼중음성|TNBC", full_text, re.I):
-            score -= 2
-
-    # 5. 매체 Tier 우대
     if tier == "1 Tier": score += 1
-
     return max(1, min(score, 10))
 
 # 단일 매체 파싱
@@ -321,6 +301,7 @@ if not raw_df.empty:
 
     st.divider()
 
+    # ★ 실제 [Roche] 메일 발송 양식 규격으로 출력 생성 ★
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
@@ -329,22 +310,38 @@ if not raw_df.empty:
         
         if st.button("🚀 선택한 기사로 뉴스레터 생성하기"):
             if not selected_df.empty:
-                today_date = datetime.now().strftime('%b %d')
-                output_text = f"**[Roche] Daily News Monitoring {today_date}**\n\nNEWS\n\n"
+                now = datetime.now()
+                title_date_str = now.strftime('%b %d')        # 예: Jul 23
+                header_date_str = now.strftime('%d %B, %Y')   # 예: 23 July, 2026
                 
+                # 1. 메일 양식 텍스트 헤더
+                output_text = f"제목: [Roche] Daily News Monitoring {title_date_str}\n\n"
+                output_text += f"Roche Daily News Highlights\n"
+                output_text += f"{header_date_str}\n\n"
+                output_text += f"NEWS\n\n"
+                
+                # 2. 카테고리별 기사 리스팅 (PDF 양식과 100% 동일)
                 for cat in categories:
-                    output_text += f"**{cat}**\n"
+                    output_text += f"{cat}\n"
                     cat_df = selected_df[selected_df["카테고리"] == cat]
                     
                     if not cat_df.empty:
                         for _, r in cat_df.iterrows():
+                            # 양식: * 기사제목 (매체명 MM/DD)
                             output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} {r['게재일']})\n"
                     else:
-                        output_text += "* (관련 최신 기사 없음)\n"
+                        output_text += "* (관련 주요 기사 없음)\n"
                     output_text += "\n"
                 
+                # 3. 메일 푸터 및 서명
+                output_text += f"[한국로슈 Communications & Public Affairs Chapter]\n"
+                output_text += f"이미규 | migyu.lee@roche.com\n"
+                output_text += f"김혜련 | hyeryeon.kim@roche.com\n"
+                output_text += f"박수윤 | sue.park@roche.com\n\n"
+                output_text += f"© {now.year} Roche Korea Co.,Ltd\n"
+                
                 st.markdown(output_text)
-                st.download_button("📋 텍스트 파일로 다운로드", output_text, f"Roche_News_{datetime.now().strftime('%Y%m%d')}.txt")
+                st.download_button("📋 텍스트 파일로 다운로드", output_text, f"Roche_News_{now.strftime('%Y%m%d')}.txt")
             else:
                 st.warning("선택된 기사가 없습니다.")
 else:
