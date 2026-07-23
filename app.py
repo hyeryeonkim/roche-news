@@ -7,7 +7,7 @@ from time import mktime
 from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard (Industry 정교화 엔진)")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard (질환 서브타입 정교화 엔진)")
 
 # 1. 수집 매체 리스트 (28개 전체 매체)
 ALL_MEDIA_LIST = [
@@ -87,14 +87,12 @@ NEGATIVE_KEYWORDS = [
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
-# 자사 관련 핵심 질환 키워드 (환자단체 가점용)
 ROCHE_DISEASE_AREAS = [
     "폐암", "비소세포폐암", "유방암", "간암", "혈액암", "림프종", "DLBCL",
     "SMA", "척수성근위축증", "NMOSD", "시신경척수염", "황반변성", "황반부종",
     "희귀질환", "희귀난치성질환", "루푸스", "다발성경화증", "DMD", "근이영양증"
 ]
 
-# 비관련 질환 키워드 (환자단체 감점용)
 UNRELATED_DISEASE_AREAS = [
     "아토피", "건선", "당뇨", "고혈압", "치매", "알츠하이머", "탈모", "통풍", "골다공증", "성조숙증", "비만"
 ]
@@ -137,79 +135,74 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# [Industry 뉴스 정교화 적용된 점수 계산 함수]
+# [폐암 & 유방암 서브타입 가감점 로직이 탑재된 점수 계산 함수]
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
-    # -------------------------------------------------------------
-    # 1. 카테고리별 세부 스코어링
-    # -------------------------------------------------------------
+    # 1. 카테고리별 기본 스코어링
     if category == "Corporate News":
         score += 4
         if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 2
 
     elif category == "Product News":
         score += 3
-        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디"]): score += 2
+        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]): score += 2
 
     elif category == "Disease/ Market News":
         score += 3
-        if any(comp in full_text for comp in ["키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나"]):
+        if any(comp in full_text for comp in ["키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "피크레이", "티루캡"]):
             score += 2
-        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "SMA", "황반변성", "유방암", "간암", "NMOSD"]):
+        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "유방암", "SMA", "황반변성", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
                 score += 1
 
-    # ★ [Industry / Policy News 고도화 가감점] ★
     elif category == "Industry/ Policy News":
         score += 2
-        
-        # [우선순위 1] 약가 제도 / 급여 / 위험분담제 / 경평면제 (+2점)
         if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]):
             score += 2
-
-        # [우선순위 2] 국회 / 보건복지위 / 국정감사 / 입법 동향 (+2점)
         if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]):
             score += 2
-
-        # [우선순위 3] 4대 주요 기관 정책 및 제도 변경 (+1점)
         if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
             if any(policy in full_text for policy in ["정책", "개편", "가이드라인", "고시", "제도", "인사"]):
                 score += 1
-
-        # [우선순위 4] 외자사 / 글로벌 제약 관련 규제 및 이슈 (+1점)
         if any(mNC in full_text for mNC in ["다국적", "글로벌", "외자사", "KRPIA"]):
             if any(m_evt in full_text for m_evt in ["약가", "규제", "제도", "인사", "CSR"]):
                 score += 1
-
-        # [우선순위 5] 환자단체 관련 스마트 가감점 (아이디어 반영!)
         if any(pt in full_text for pt in ["환자단체", "환우회", "환자"]):
-            # 관련 질환 영역 환자단체 보도 시 가점 (+2점)
-            if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS):
-                score += 2
-            # 무관 질환 영역 환자단체 보도 시 감점 (-2점)
-            if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS):
-                score -= 2
+            if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS): score += 2
+            if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS): score -= 2
 
-    # -------------------------------------------------------------
-    # 2. 제목(Title) 가중치 (카테고리별 핵심어 제목 포함 시 +2점)
-    # -------------------------------------------------------------
+    # 2. 제목(Title) 가중치
     if category == "Industry/ Policy News":
         if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]):
             score += 2
     else:
-        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자"]):
+        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]):
             score += 2
 
-    # -------------------------------------------------------------
-    # 3. 폐암 변이 가감점 및 매체 Tier 우대
-    # -------------------------------------------------------------
+    # 3. [폐암 변이 가감점] (ALK/KRAS +2점, EGFR/ROS -2점)
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
 
+    # 4. ★ [유방암 서브타입 정교화 가감점] (HER2+, PIK3CA HR+ vs TNBC) ★
+    if re.search(r"유방암", full_text, re.I):
+        # [A] HER2 양성 유방암 가점 (+2점)
+        if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I):
+            score += 2
+
+        # [B] HR 양성 / HER2 음성 유방암 (이토베비 / PIK3CA / 피크레이 / 티루캡 연관 시만 가점 +2점)
+        if re.search(r"HR\+|HR양성|호르몬\s*양성|호르몬\s*수용체", full_text, re.I):
+            if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I):
+                score += 2
+
+        # [C] 삼중음성유방암 (TNBC) 감점 (-2점)
+        if re.search(r"삼중음성|TNBC", full_text, re.I):
+            score -= 2
+
+    # 5. 매체 Tier 우대
     if tier == "1 Tier": score += 1
 
     return max(1, min(score, 10))
