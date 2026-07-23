@@ -283,7 +283,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
-        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 4
 
     if re.search(r"유방암", full_text, re.I):
         if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
