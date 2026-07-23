@@ -197,7 +197,7 @@ INDUSTRY_SINGLE_KEYWORDS = [
 
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
-    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원", "화장품", "건강기능식품", "건기식"
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
 ROCHE_DISEASE_AREAS = [
@@ -207,7 +207,7 @@ ROCHE_DISEASE_AREAS = [
 ]
 
 UNRELATED_DISEASE_AREAS = [
-    "아토피", "건선", "당뇨", "고혈압", "치매", "알츠하이머", "탈모", "통풍", "골다공증", "성조숙증", "비만",
+    "아토피", "건선", "당뇨", "고혈압", "치매", "알츠하이머", "탈모", "통풍", "골다공증", "성조숙증", "비만"
 ]
 
 # 카테고리 매칭 함수
@@ -248,14 +248,13 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# ★ 기존 세부 암종별 정교 필터링 조건 완벽 복원 및 보완 ★
+# 점수 계산 함수
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
-    # 일반 상식/생활 건강 정보 강력 감점 (-5점)
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단"]):
-        score -= 5
+        score -= 4
 
     if category == "Corporate News":
         score += 4
@@ -263,13 +262,13 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 
     elif category == "Product News":
         score += 3
-        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디", "오크레부스", "엔스프링", "컬럼비", "폴라이비", "룬수미오" "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]): score += 2
+        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]): score += 2
 
     elif category == "Disease/ Market News":
         score += 3
-        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도" "엔허투", "아일리아", "루센티스", "비오뷰", "엡킨리", "앱킨리", "예스카타" "CAR-T", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "피크레이", "티루캡"]):
+        if any(comp in full_text for comp in ["키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "피크레이", "티루캡"]):
             score += 2
-        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "DLBCL", "다발성경화증", "유방암", "SMA", "척수성 근위축증", "황반변성", "간암", "NMOSD"]):
+        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "유방암", "SMA", "황반변성", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
                 score += 1
 
@@ -285,30 +284,26 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
             if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS): score += 2
             if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS): score -= 2
 
-    # 키워드 제목 가점
     if category == "Industry/ Policy News":
         if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]): score += 2
     else:
-        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "오크레부스", "엔스프링", "컬럼비", "폴라이비", "룬수미오", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]): score += 2
+        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]): score += 2
 
-    # ★ 1) 폐암 세부 필터링 (ALK/KRAS 가점, EGFR/ROS1 감점) 복원 ★
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
-        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 4
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
 
-    # ★ 2) 유방암 세부 필터링 (HER2/HR양성 가점, 삼중음성 감점) 복원 ★
     if re.search(r"유방암", full_text, re.I):
         if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
         if re.search(r"HR\+|HR양성|호르몬\s*양성|호르몬\s*수용체", full_text, re.I):
             if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
-        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 4
+        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 2
 
-    # Tier 1 매체 (주요일간지/주요전문지) 가점 (+1점)
     if tier == "1 Tier": score += 1
     return max(1, min(score, 10))
 
-# 초고속 단일 매체 파싱 (타임아웃 3초)
+# 초고속 단일 매체 파싱
 def parse_single_media(m, time_limit):
     sub_results = []
     try:
@@ -399,12 +394,13 @@ with col_btn:
 
 raw_df = st.session_state["news_df"]
 
-# 히스토리 데이터 건수 확인
+# 히스토리 데이터 확인
 history_count = 0
+history_df = pd.DataFrame()
 if os.path.exists(HISTORY_FILE):
     try:
-        h_df = pd.read_csv(HISTORY_FILE)
-        history_count = len(h_df)
+        history_df = pd.read_csv(HISTORY_FILE)
+        history_count = len(history_df)
     except:
         pass
 
@@ -454,7 +450,7 @@ if not raw_df.empty:
 
     st.divider()
 
-    # ★ Roche 이메일 HTML 뉴스레터 생성 및 데이터 축적 엔진 ★
+    # 뉴스레터 생성 및 피드백 데이터 저장
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
@@ -466,8 +462,8 @@ if not raw_df.empty:
                 save_selected_history(selected_df)
                 
                 now = datetime.now()
-                title_date_str = now.strftime('%b %d')        # Jul 23
-                header_date_str = now.strftime('%d %B, %Y')   # 23 July, 2026
+                title_date_str = now.strftime('%b %d')
+                header_date_str = now.strftime('%d %B, %Y')
                 
                 html_body = f'<div style="font-family:\'Segoe UI\',Arial,sans-serif;max-width:680px;color:#333333;line-height:1.5;border:1px solid #e2e8f0;padding:25px;border-radius:8px;background-color:#ffffff;">'
                 html_body += f'<div style="border-bottom:2px solid #0066CC;padding-bottom:12px;margin-bottom:20px;"><table style="width:100%;border-collapse:collapse;"><tr><td style="font-size:24px;font-weight:bold;color:#0066CC;">Roche Daily News Highlights</td><td style="text-align:right;font-size:14px;color:#666666;vertical-align:bottom;">{header_date_str}</td></tr></table></div>'
@@ -487,10 +483,10 @@ if not raw_df.empty:
                 
                 html_body += f'<div style="margin-top:30px;padding-top:15px;border-top:1px solid #e2e8f0;font-size:12px;color:#666666;line-height:1.6;"><p style="font-weight:bold;color:#333333;margin:0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p><p style="margin:0;">이미규 | migyu.lee@roche.com</p><p style="margin:0;">김혜련 | hyeryeon.kim@roche.com</p><p style="margin:0 0 10px 0;">박수윤 | sue.park@roche.com</p><p style="color:#999999;margin:0;">© {now.year} Roche Korea Co.,Ltd</p></div></div>'
 
-                st.success("🎉 뉴스레터 생성이 완료되었습니다! (선택하신 기사 데이터가 축적되었습니다)")
+                st.success("🎉 뉴스레터 생성이 완료되었습니다! (선택 데이터가 기록되었습니다)")
                 st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
                 
-                st.markdown("### 📧 이메일 뉴스레터 완제품 (아래 상자를 마우스로 드래그하여 Ctrl+C 복사 후 아웃룩에 Ctrl+V 붙여넣으세요)")
+                st.markdown("### 📧 이메일 뉴스레터 완제품 (마우스 드래그 복사)")
                 st.html(html_body)
                 
                 st.divider()
@@ -502,5 +498,34 @@ if not raw_df.empty:
                 )
             else:
                 st.warning("선택된 기사가 없습니다.")
-else:
-    st.info("현재 수집된 기사가 없습니다.")
+
+st.divider()
+
+# ★ 🧠 AI 학습 데이터 관리 / 삭제 / 초기화 섹션 ★
+with st.expander("🧠 AI 학습용 데이터 관리 & 초기화 센터 (클릭하여 열기)", expanded=False):
+    if os.path.exists(HISTORY_FILE) and not history_df.empty:
+        st.write(f"현재 총 **{len(history_df)}건**의 선택 데이터가 누적 저장되어 있습니다.")
+        
+        # 1. 축적 데이터 미리보기
+        st.dataframe(history_df[["선택시각", "카테고리", "매체명", "기사제목", "기사링크"]], use_container_width=True)
+        
+        col_del1, col_del2 = st.columns([1, 1])
+        
+        with col_del1:
+            # 2. 다운로드 버튼
+            csv_data = history_df.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="💾 누적 데이터 CSV 다운로드",
+                data=csv_data,
+                file_name=f"Roche_History_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+            
+        with col_del2:
+            # 3. 전체 초기화 버튼
+            if st.button("🗑️ 학습 데이터 전체 초기화 (Reset)", type="primary"):
+                os.remove(HISTORY_FILE)
+                st.success("모든 히스토리 데이터가 초기화되었습니다!")
+                st.rerun()
+    else:
+        st.info("현재 축적된 AI 학습 데이터가 없습니다. 뉴스레터를 생성하면 선택된 기사가 여기에 저장됩니다.")
