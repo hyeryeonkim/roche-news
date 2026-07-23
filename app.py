@@ -6,7 +6,7 @@ from datetime import datetime
 from time import mktime
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard (일간지/경제지/전문지 통합)")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
 # 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트
 ALL_MEDIA_LIST = [
@@ -46,7 +46,7 @@ ALL_MEDIA_LIST = [
     {"media": "메디소비자뉴스", "tier": "2 Tier", "rss": "https://www.medisobizanews.com/rss/allArticle.xml"}
 ]
 
-# 2. 풀 버전 로슈 통합 모니터링 키워드 사전
+# 2. 로슈 모니터링 키워드 사전
 KEYWORDS = {
     "Corporate News": [
         "로슈", "Roche", "제넨텍", "Genentech", "쥬가이", "Chugai", "한국로슈"
@@ -66,11 +66,17 @@ KEYWORDS = {
     "Industry/ Policy News": [
         "약가협상", "약가인하", "KRPIA", "한국글로벌의약산업협회", "혁신신약", 
         "위험분담제", "RSA", "건강보험공단", "건보공단", "심평원", "건강보험심사평가원", 
-        "식약처", "보건복지부", "수가", "학술대회", "R&D", "규제"
+        "식약처", "보건복지부", "수가", "학술대회", "R&D"
     ]
 }
 
-# 3. 뉴스 데이터 수집 및 파싱 함수
+# 3. 부동산/일반경제 등 헬스케어 무관 기사 제거용 제외 키워드 (Negative Keywords)
+NEGATIVE_KEYWORDS = [
+    "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", "월세",
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "매수", "목표가", "종목"
+]
+
+# 4. 뉴스 수집 함수
 @st.cache_data(ttl=300)
 def fetch_all_news():
     results = []
@@ -83,7 +89,11 @@ def fetch_all_news():
                 summary = entry.get("summary", entry.get("description", ""))
                 full_text = f"{title} {summary}"
                 
-                # 기사 게재 실제 날짜 파싱 (MM/DD)
+                # 1) 제외 키워드가 포함되어 있다면 걸러냄
+                if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
+                    continue
+                
+                # 2) 실제 기사 게재 날짜 파싱 (MM/DD)
                 pub_date_str = datetime.now().strftime('%m/%d')
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     dt = datetime.fromtimestamp(mktime(entry.published_parsed))
@@ -92,6 +102,7 @@ def fetch_all_news():
                     dt = datetime.fromtimestamp(mktime(entry.updated_parsed))
                     pub_date_str = dt.strftime('%m/%d')
                 
+                # 3) 카테고리 매칭
                 matched_cat, matched_kw = None, None
                 for cat, kw_list in KEYWORDS.items():
                     for kw in kw_list:
@@ -102,6 +113,7 @@ def fetch_all_news():
                 
                 if matched_cat:
                     results.append({
+                        "선택": False, # 체크박스 기본값
                         "카테고리": matched_cat,
                         "매체명": m["media"],
                         "Tier": m["tier"],
@@ -112,35 +124,51 @@ def fetch_all_news():
                     })
         except:
             pass
-    return pd.DataFrame(results)
+    
+    df_res = pd.DataFrame(results)
+    if not df_res.empty:
+        # 중복 제거 및 정렬
+        df_res = df_res.sort_values(by=["Tier", "매체명"]).drop_duplicates(subset=["기사제목"], keep="first")
+    return df_res
 
-df = fetch_all_news()
+raw_df = fetch_all_news()
 
-# 4. 화면 UI 구성
-tab1, tab2 = st.tabs(["📋 전체 수집 Raw Data (일간지+전문지)", "✉️ 메일용 뉴스레터 자동 생성"])
+# 5. UI 화면
+st.subheader(f"📋 실시간 수집된 기사 ({len(raw_df)}건)")
+st.info("💡 **사용 방법:** 아래 표의 맨 앞 [선택] 열에 있는 체크박스(✅)를 눌러 포함시킬 기사를 고른 후, 맨 아래 '뉴스레터 생성' 버튼을 누르세요.")
 
-with tab1:
-    st.subheader(f"총 {len(df)}건의 관련 뉴스가 모였습니다.")
-    if not df.empty:
-        # Tier별 또는 매체별 필터링 기능 제공
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("현재 매체 피드상에 수집된 관련 최신 기사가 없습니다.")
-
-with tab2:
-    st.subheader("Daily News Monitoring 템플릿 생성")
-    if st.button("🚀 뉴스레터 생성하기"):
-        if not df.empty:
-            # Tier순 정렬 후 제목 중복 제거 (1 Tier 일간지 기사가 먼저 나옴)
-            dedup = df.sort_values(by=["Tier", "매체명"]).drop_duplicates(subset=["기사제목"], keep="first")
-            
+if not raw_df.empty:
+    # 대시보드 내 체크박스 편집 표 (st.data_editor)
+    edited_df = st.data_editor(
+        raw_df,
+        column_config={
+            "선택": st.column_config.CheckboxColumn(
+                "선택 ✅",
+                help="뉴스레터에 포함할 기사를 선택하세요.",
+                default=False,
+            ),
+            "기사링크": st.column_config.LinkColumn("기사링크")
+        },
+        disabled=["카테고리", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
+        hide_index=True,
+        use_container_width=True
+    )
+    
+    st.divider()
+    
+    # 선택된 기사만 추출
+    selected_df = edited_df[edited_df["선택"] == True]
+    st.write(f"현재 선택된 기사: **{len(selected_df)}건**")
+    
+    if st.button("🚀 선택한 기사로 뉴스레터 생성하기"):
+        if not selected_df.empty:
             today_date = datetime.now().strftime('%b %d')
             output_text = f"**[Roche] Daily News Monitoring {today_date}**\n\n"
             output_text += "NEWS\n\n"
             
             for cat in KEYWORDS.keys():
                 output_text += f"**{cat}**\n"
-                cat_df = dedup[dedup["카테고리"] == cat]
+                cat_df = selected_df[selected_df["카테고리"] == cat]
                 
                 if not cat_df.empty:
                     for _, r in cat_df.iterrows():
@@ -152,4 +180,6 @@ with tab2:
             st.markdown(output_text)
             st.download_button("📋 텍스트 파일로 다운로드", output_text, f"Roche_News_{datetime.now().strftime('%Y%m%d')}.txt")
         else:
-            st.warning("수집된 데이터가 없습니다.")
+            st.warning("선택된 기사가 없습니다. 위의 표에서 뉴스레터에 넣을 기사의 체크박스를 먼저 클릭해 주세요!")
+else:
+    st.info("현재 수집된 기사가 없습니다.")
