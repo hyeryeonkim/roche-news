@@ -9,7 +9,7 @@ from time import mktime
 from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard (학습 데이터 축적 엔진)")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
 # 히스토리 저장 파일 경로
 HISTORY_FILE = "selected_articles_history.csv"
@@ -197,8 +197,7 @@ INDUSTRY_SINGLE_KEYWORDS = [
 
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
-    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원",
-    "음식", "레시피", "여름철", "건강 10계명", "스트레칭", "다이어트"
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
 ROCHE_DISEASE_AREAS = [
@@ -249,7 +248,7 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 점수 계산 함수 (정교화 가점/감점 적용)
+# ★ 기존 세부 암종별 정교 필터링 조건 완벽 복원 및 보완 ★
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
@@ -264,16 +263,15 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 
     elif category == "Product News":
         score += 3
-        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]): score += 2
+        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디", "오크레부스", "엔스프링", "컬럼비", "폴라이비", "룬수미오" "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]): score += 2
 
     elif category == "Disease/ Market News":
-        score += 2
-        if any(comp in full_text for comp in ["키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "피크레이", "티루캡"]):
+        score += 3
+        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도" "엔허투", "아일리아", "루센티스", "비오뷰", "엡킨리", "앱킨리", "예스카타" "CAR-T", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "피크레이", "티루캡"]):
             score += 2
-        # 질환명과 주요 이벤트(급여/임상/허가)가 동시에 존재할 때만 고득점
-        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "유방암", "SMA", "황반변성", "간암", "NMOSD"]):
+        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "DLBCL", "다발성경화증", "유방암", "SMA", "척수성 근위축증", "황반변성", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
-                score += 3
+                score += 1
 
     elif category == "Industry/ Policy News":
         score += 2
@@ -281,11 +279,36 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]): score += 2
         if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
             if any(policy in full_text for policy in ["정책", "개편", "가이드라인", "고시", "제도", "인사"]): score += 1
+        if any(mNC in full_text for mNC in ["다국적", "글로벌", "외자사", "KRPIA"]):
+            if any(m_evt in full_text for m_evt in ["약가", "규제", "제도", "인사", "CSR"]): score += 1
+        if any(pt in full_text for pt in ["환자단체", "환우회", "환자"]):
+            if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS): score += 2
+            if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS): score -= 2
 
+    # 키워드 제목 가점
+    if category == "Industry/ Policy News":
+        if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]): score += 2
+    else:
+        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "오크레부스", "엔스프링", "컬럼비", "폴라이비", "룬수미오", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]): score += 2
+
+    # ★ 1) 폐암 세부 필터링 (ALK/KRAS 가점, EGFR/ROS1 감점) 복원 ★
+    if re.search(r"폐암|비소세포폐암", full_text, re.I):
+        if re.search(r"ALK|KRAS", full_text, re.I):
+            if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 3
+
+    # ★ 2) 유방암 세부 필터링 (HER2/HR양성 가점, 삼중음성 감점) 복원 ★
+    if re.search(r"유방암", full_text, re.I):
+        if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
+        if re.search(r"HR\+|HR양성|호르몬\s*양성|호르몬\s*수용체", full_text, re.I):
+            if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
+        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 3
+
+    # Tier 1 매체 (주요일간지/주요전문지) 가점 (+1점)
     if tier == "1 Tier": score += 1
     return max(1, min(score, 10))
 
-# 초고속 단일 매체 파싱 (타임아웃 3초 적용)
+# 초고속 단일 매체 파싱 (타임아웃 3초)
 def parse_single_media(m, time_limit):
     sub_results = []
     try:
@@ -413,7 +436,7 @@ if not raw_df.empty:
                         "선택": st.column_config.CheckboxColumn("선택 ✅", default=False),
                         "카테고리": st.column_config.SelectboxColumn(
                             "카테고리 🔄",
-                            help="기사를 다른 카테고리로 변경하려면 클릭하여 선택하세요",
+                            help="기사를 다른 카테고리로 변경하려면 클릭하여 선택하세요 (변경 후 Enter)",
                             options=CATEGORIES_LIST,
                             required=True
                         ),
@@ -431,7 +454,7 @@ if not raw_df.empty:
 
     st.divider()
 
-    # ★ Roche 이메일 HTML 뉴스레터 생성 및 피드백 학습 데이터 자동 축적 엔진 ★
+    # ★ Roche 이메일 HTML 뉴스레터 생성 및 데이터 축적 엔진 ★
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
@@ -440,7 +463,6 @@ if not raw_df.empty:
         
         if st.button("🚀 선택한 기사로 뉴스레터 생성하기"):
             if not selected_df.empty:
-                # 1. 학습용 피드백 데이터 저장
                 save_selected_history(selected_df)
                 
                 now = datetime.now()
@@ -465,7 +487,7 @@ if not raw_df.empty:
                 
                 html_body += f'<div style="margin-top:30px;padding-top:15px;border-top:1px solid #e2e8f0;font-size:12px;color:#666666;line-height:1.6;"><p style="font-weight:bold;color:#333333;margin:0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p><p style="margin:0;">이미규 | migyu.lee@roche.com</p><p style="margin:0;">김혜련 | hyeryeon.kim@roche.com</p><p style="margin:0 0 10px 0;">박수윤 | sue.park@roche.com</p><p style="color:#999999;margin:0;">© {now.year} Roche Korea Co.,Ltd</p></div></div>'
 
-                st.success("🎉 뉴스레터 생성이 완료되었습니다! (선택하신 기사 패턴이 히스토리에 기록되었습니다)")
+                st.success("🎉 뉴스레터 생성이 완료되었습니다! (선택하신 기사 데이터가 축적되었습니다)")
                 st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
                 
                 st.markdown("### 📧 이메일 뉴스레터 완제품 (아래 상자를 마우스로 드래그하여 Ctrl+C 복사 후 아웃룩에 Ctrl+V 붙여넣으세요)")
