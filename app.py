@@ -247,20 +247,20 @@ def classify_article_by_rules(text):
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     
-    # 0점에서 출발하여 변별력 있게 스코어링
+    # 🎯 0점에서 출발하여 변별력 있게 평가
     score = 0
 
-    # 1. 강력 감점 요인
+    # 1. 강력 감점 요인 (오탐 제거)
     if re.search(r"컬럼비아\s*대|컬럼비아대|컬럼비아\s*대학교|columbia\s*univ", full_text, re.I):
         score -= 8
 
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단"]):
         score -= 4
 
-    # 2. 카테고리 기본 매칭 점수
+    # 2. 카테고리 기본 매칭 점수 (+1점)
     score += 1
 
-    # 3. 카테고리별 세부 평가
+    # 3. 카테고리별 세부 가점 로직
     if category == "Corporate News":
         if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]):
             score += 3
@@ -282,11 +282,13 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         has_target = any(re.search(tc, full_text, re.I) for tc in target_conditions)
         has_event = any(ev in full_text for ev in major_events)
 
+        # [🎯 Track 1: 경쟁사 X 로슈 세부 적응증 X 주요 이슈 결합 (+4점)]
         if has_comp and has_target and has_event:
             score += 4
         elif has_comp and (has_target or has_event):
             score += 2
 
+        # [🎯 Track 2: KOL 연구결과 & 보건 통계/가이드라인 레퍼런스 (+3점)]
         is_kol_research = re.search(r"(교수|연구팀|임상\s*발표|국제학회|게재|학술지|연구결과|발표회)", full_text)
         is_gov_stats = re.search(r"(질병청|질병관리청|통계|발병률\s*1위|주의보|가이드라인|치료지침|지침\s*개정)", full_text)
 
@@ -303,7 +305,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
             score += 1
 
-    # 4. 제목 포함 가점
+    # 4. 제목 포함 가점 (+1점)
     if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "약가", "급여", "국감"]):
         score += 1
 
@@ -315,7 +317,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I):
             score -= 1
 
-    # 6. 매체 Tier 가점
+    # 6. 매체 Tier 가점 (+1점)
     if tier == "1 Tier":
         score += 1
 
@@ -368,6 +370,7 @@ def parse_single_media(m, time_limit):
         pass
     return sub_results
 
+# 🎯 3. 유사도 기반 중복 기사 군집화 및 대표 1건 선정 함수
 def cluster_and_mark_representatives(df, threshold=0.70):
     if df.empty:
         df["is_representative"] = False
@@ -400,6 +403,7 @@ def cluster_and_mark_representatives(df, threshold=0.70):
         
         df.iloc[cluster_indices, df.columns.get_loc("cluster_id")] = cluster_cnt
         
+        # 대표 1건 차출: 1 Tier 매체 우선 -> 연관도 높은 순 -> 게재 시각이 빠른 순
         sub_df = df.iloc[cluster_indices].copy()
         sub_df["tier_score"] = sub_df["Tier"].apply(lambda x: 1 if x == "1 Tier" else 2)
         best_idx = sub_df.sort_values(
@@ -422,7 +426,6 @@ def fetch_recent_news():
         for future in futures:
             all_results.extend(future.result())
     
-    # 안전한 기본 스키마 생성
     empty_df = pd.DataFrame(columns=[
         "선택", "연관도점수", "카테고리", "매체명", "Tier", "검색키워드", 
         "기사제목", "기사링크", "게재일", "pub_dt", "is_representative", "cluster_id"
@@ -481,6 +484,7 @@ if not raw_df.empty:
         auto_df = raw_df.copy()
         auto_df["선택"] = False
         
+        # 🎯 중복 도배 방지: 대표 기사(is_representative=True)만 대상으로 상위 5건 체크
         if "is_representative" in auto_df.columns:
             for cat in CATEGORIES_LIST:
                 cat_rep_indices = auto_df[
