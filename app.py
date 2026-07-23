@@ -63,12 +63,26 @@ PRODUCT_KEYWORDS = [
     "글로피타맙", "컬럼비", "엘레비디스", "엘리비디스", "이나볼리십", "이토베비", "피아스카이", "크로발리맙", "트론티네맙"
 ]
 
-# 4. 제외 키워드
+# 4. Disease / Market 뉴스 풀 버전 단독 키워드 리스트 (요청사항 100% 반영)
+DISEASE_KEYWORDS = [
+    "킴리아", "예스카타", "졸겐스마", "스핀라자", "오나셈노진아베파르보벡", "뉴시너센", "넥사바", "렌비마", 
+    "키트루다", "옵디보", "아일리아", "비오뷰", "루센티스", "아필리부", "아이델젠트", "알룬브릭", "로비큐아", 
+    "엔허투", "이뮤도", "임핀지", "림카토", "민쥬비", "척수성근위축증", "SMA", "희귀질환", "신경근육질환", 
+    "시신경척수염", "NMOSD", "시신경척수염범주질환", "희귀난치성질환", "희귀난치질환", "황반변성", "황반부종", 
+    "당뇨병성망막병증", "혈액암", "바이오의약품", "당뇨병성황반부종", "인플루엔자", "유방암", "간암", 
+    "간세포암", "비소세포폐암", "파킨슨", "대한종양내과학회", "신경과학회", "신경면역학회", "안과학회", 
+    "망막학회", "대한감염학회", "면역항암제", "항체의약품", "세포치료제", "생물의약품", "바이오시밀러", 
+    "암질환심의위원회", "암질심", "중증질환심의위원회", "DMD", "뒤센근이영양증", "듀센근이영양증", "DLBCL", 
+    "엡킨리", "다발성경화증", "티사브리", "렘트라다", "울토미리스", "Ultomiris", "라불리주맙", "Ravulizumab", 
+    "업리즈나", "이네빌리주맙", "티루캡", "피크레이", "조기암", "조기유방암"
+]
+
+# 5. 제외 키워드
 NEGATIVE_KEYWORDS = ["집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가"]
 
-# 5. 정교 규칙 매칭 함수 (Corporate 우선순위 재정립)
+# 6. 정교 규칙 매칭 함수
 def classify_article_by_rules(text):
-    # 1) Corporate News 매칭 (로슈 기업 동향, 인사, CSR, 단독 키워드 최우선 분류)
+    # 1) Corporate News (로슈/기업 전용 단독 키워드 최우선 분류)
     if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
         return "Corporate News", "(로슈*기업동향/CSR)"
         
@@ -81,15 +95,15 @@ def classify_article_by_rules(text):
         if re.search(re.escape(p), text, re.I):
             return "Product News", p
 
-    # 3) Disease / Market News 불리언 조합 매칭
+    # 3) Disease / Market News 매칭 (단독 키워드 + 불리언 조합)
+    for dk in DISEASE_KEYWORDS:
+        if re.search(re.escape(dk), text, re.I):
+            return "Disease/ Market News", dk
+
     if re.search(r"암", text) and re.search(r"항암제", text) and re.search(r"임상|허가|급여|적응증|3상|제약|신약|FDA|암질심", text):
         return "Disease/ Market News", "(암*항암제*제약이슈)"
     if re.search(r"독감|인플루엔자", text) and re.search(r"항바이러스제|치료제|치료|질병관리청|국가감염병|통계|조사", text):
         return "Disease/ Market News", "(독감*치료제/감염병)"
-    if re.search(r"척수성근위축증|SMA|시신경척수염|NMOSD|황반변성|루푸스|다발성경화증|유방암|간암|비소세포폐암|혈액암|DMD", text, re.I) and re.search(r"치료제|신약|임상|급여|진단", text):
-        return "Disease/ Market News", "(주요질환*치료제)"
-    if re.search(r"킴리아|예스카타|졸겐스마|스핀라자|넥사바|렌비마|키트루다|옵디보|아일리아|비오뷰|루센티스|엔허투|임핀지|울토미리스|업리즈나", text, re.I):
-        return "Disease/ Market News", "경합/타사 제품"
 
     # 4) Industry / Policy News 불리언 조합 매칭
     if re.search(r"다국적|글로벌|외자사", text, re.I) and re.search(r"제약사|제약업계|제약기업|제약업체", text) and re.search(r"인사|동정|수상|CSR|사회공헌|인수|합병|리베이트", text):
@@ -109,7 +123,7 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 6. 연관도 점수 세부 산정 (폐암 변이 가감점 포함)
+# 7. 연관도 점수 세부 산정 (폐암 변이 가감점 포함)
 def calculate_relevance_score(title, summary, category):
     full_text = f"{title} {summary}"
     score = 4
@@ -119,6 +133,7 @@ def calculate_relevance_score(title, summary, category):
     if any(k in full_text for k in ["로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디"]): score += 2
     if any(p in full_text for p in ["약가", "암질심", "위험분담제", "급여", "심평원", "식약처"]): score += 1
 
+    # 폐암 기사 관련 변이 가감점 로직
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             score += 2
@@ -127,7 +142,7 @@ def calculate_relevance_score(title, summary, category):
 
     return max(1, min(score, 10))
 
-# 7. 뉴스 수집 로직
+# 8. 뉴스 수집 로직
 @st.cache_data(ttl=300)
 def fetch_recent_news():
     results = []
@@ -182,7 +197,7 @@ def fetch_recent_news():
 
 raw_df = fetch_recent_news()
 
-# 8. UI 화면 구성
+# 9. UI 화면 구성
 st.write(f"⏰ 실시간 수집된 주요 뉴스: **{len(raw_df)}건**")
 
 if not raw_df.empty:
@@ -195,9 +210,7 @@ if not raw_df.empty:
         st.success("스마트 분석 완료! 카테고리별 핵심 기사 상위 5개가 선택되었습니다.")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
-    categories = ["Corporate News", "Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
-    # 카테고리 중복 제거
-    categories = list(dict.fromkeys(categories))
+    categories = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
     tabs = st.tabs([f"📌 {cat}" for cat in categories])
     
     all_edited_dfs = []
