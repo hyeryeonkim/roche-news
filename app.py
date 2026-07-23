@@ -2,7 +2,7 @@ import streamlit as st
 import feedparser
 import pandas as pd
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import mktime
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
@@ -56,7 +56,7 @@ KEYWORDS = {
         "에브리스디", "Evrysdi", "허셉틴", "Herceptin", "아바스틴", "Avastin", 
         "타미플루", "Tamiflu", "조플루자", "Xofluza", "캐싸일라", "Kadcyla", 
         "퍼제타", "Perjeta", "폴리비", "Polivy", "페스고", "Phesgo", 
-        "로즐리트렉", "Rozlytrek", "엔트렉티닙", "가싸이바", "Gazyva", "엔스프링", "Enspryng"
+        "로즐리트렉", "Rozlytrek", "엔트렉티닙", "가싸이바", "Gazyva", "엔스프ring"
     ],
     "Disease/ Market News": [
         "루푸스", "다발성경화증", "척수성근위축증", "SMA", "시신경척수염", "NMOSD", 
@@ -70,16 +70,20 @@ KEYWORDS = {
     ]
 }
 
-# 3. 부동산/일반경제 등 헬스케어 무관 기사 제거용 제외 키워드 (Negative Keywords)
+# 3. 무관 기사 제거용 제외 키워드
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", "월세",
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "매수", "목표가", "종목"
 ]
 
-# 4. 뉴스 수집 함수
+# 4. 뉴스 수집 및 24시간 필터링 함수
 @st.cache_data(ttl=300)
-def fetch_all_news():
+def fetch_recent_news():
     results = []
+    now = datetime.now()
+    # 최근 36시간 이내 발행 기사로 설정 (주말/아침 수집 시차 감안)
+    time_limit = now - timedelta(hours=36)
+
     for m in ALL_MEDIA_LIST:
         try:
             feed = feedparser.parse(m["rss"])
@@ -89,20 +93,24 @@ def fetch_all_news():
                 summary = entry.get("summary", entry.get("description", ""))
                 full_text = f"{title} {summary}"
                 
-                # 1) 제외 키워드가 포함되어 있다면 걸러냄
+                # 제외 키워드 검사
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
                     continue
                 
-                # 2) 실제 기사 게재 날짜 파싱 (MM/DD)
-                pub_date_str = datetime.now().strftime('%m/%d')
+                # 날짜 및 시간 계산
+                pub_dt = None
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    dt = datetime.fromtimestamp(mktime(entry.published_parsed))
-                    pub_date_str = dt.strftime('%m/%d')
+                    pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
                 elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                    dt = datetime.fromtimestamp(mktime(entry.updated_parsed))
-                    pub_date_str = dt.strftime('%m/%d')
+                    pub_dt = datetime.fromtimestamp(mktime(entry.updated_parsed))
                 
-                # 3) 카테고리 매칭
+                # 날짜 정보가 있는 경우 최근 시간 내 기사만 수집
+                if pub_dt and pub_dt < time_limit:
+                    continue
+                
+                pub_date_str = pub_dt.strftime('%m/%d') if pub_dt else now.strftime('%m/%d')
+                
+                # 카테고리 매칭
                 matched_cat, matched_kw = None, None
                 for cat, kw_list in KEYWORDS.items():
                     for kw in kw_list:
@@ -113,7 +121,7 @@ def fetch_all_news():
                 
                 if matched_cat:
                     results.append({
-                        "선택": False, # 체크박스 기본값
+                        "선택": False,
                         "카테고리": matched_cat,
                         "매체명": m["media"],
                         "Tier": m["tier"],
@@ -127,59 +135,74 @@ def fetch_all_news():
     
     df_res = pd.DataFrame(results)
     if not df_res.empty:
-        # 중복 제거 및 정렬
         df_res = df_res.sort_values(by=["Tier", "매체명"]).drop_duplicates(subset=["기사제목"], keep="first")
     return df_res
 
-raw_df = fetch_all_news()
+raw_df = fetch_recent_news()
 
-# 5. UI 화면
-st.subheader(f"📋 실시간 수집된 기사 ({len(raw_df)}건)")
-st.info("💡 **사용 방법:** 아래 표의 맨 앞 [선택] 열에 있는 체크박스(✅)를 눌러 포함시킬 기사를 고른 후, 맨 아래 '뉴스레터 생성' 버튼을 누르세요.")
+# Session State 초기화 (탭 간 선택 항목 유지용)
+if "selected_articles" not in st.session_state:
+    st.session_state.selected_articles = {}
+
+st.write(f"⏰ **수집 상태:** 최근 36시간 이내 작성 기사 총 **{len(raw_df)}건** 수집됨")
 
 if not raw_df.empty:
-    # 대시보드 내 체크박스 편집 표 (st.data_editor)
-    edited_df = st.data_editor(
-        raw_df,
-        column_config={
-            "선택": st.column_config.CheckboxColumn(
-                "선택 ✅",
-                help="뉴스레터에 포함할 기사를 선택하세요.",
-                default=False,
-            ),
-            "기사링크": st.column_config.LinkColumn("기사링크")
-        },
-        disabled=["카테고리", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
-        hide_index=True,
-        use_container_width=True
-    )
+    # 탭 생성
+    tab_names = list(KEYWORDS.keys())
+    tabs = st.tabs([f"📌 {cat}" for cat in tab_names])
     
+    all_edited_dfs = []
+    
+    for i, cat in enumerate(tab_names):
+        with tabs[i]:
+            cat_df = raw_df[raw_df["카테고리"] == cat].copy()
+            st.markdown(f"### {cat} ({len(cat_df)}건)")
+            
+            if not cat_df.empty:
+                edited = st.data_editor(
+                    cat_df,
+                    column_config={
+                        "선택": st.column_config.CheckboxColumn("선택 ✅", default=False),
+                        "기사링크": st.column_config.LinkColumn("기사링크")
+                    },
+                    disabled=["카테고리", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f"editor_{cat}"
+                )
+                all_edited_dfs.append(edited)
+            else:
+                st.info(f"현재 {cat} 관련 최신 기사가 없습니다.")
+
     st.divider()
-    
-    # 선택된 기사만 추출
-    selected_df = edited_df[edited_df["선택"] == True]
-    st.write(f"현재 선택된 기사: **{len(selected_df)}건**")
-    
-    if st.button("🚀 선택한 기사로 뉴스레터 생성하기"):
-        if not selected_df.empty:
-            today_date = datetime.now().strftime('%b %d')
-            output_text = f"**[Roche] Daily News Monitoring {today_date}**\n\n"
-            output_text += "NEWS\n\n"
-            
-            for cat in KEYWORDS.keys():
-                output_text += f"**{cat}**\n"
-                cat_df = selected_df[selected_df["카테고리"] == cat]
+
+    # 전체 선택된 기사 합치기
+    if all_edited_dfs:
+        full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
+        selected_df = full_edited_df[full_edited_df["선택"] == True]
+        
+        st.subheader(f"✅ 현재 총 **{len(selected_df)}건**의 기사가 선택되었습니다.")
+        
+        if st.button("🚀 선택한 기사로 뉴스레터 생성하기", type="primary"):
+            if not selected_df.empty:
+                today_date = datetime.now().strftime('%b %d')
+                output_text = f"**[Roche] Daily News Monitoring {today_date}**\n\n"
+                output_text += "NEWS\n\n"
                 
-                if not cat_df.empty:
-                    for _, r in cat_df.iterrows():
-                        output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} {r['게재일']})\n"
-                else:
-                    output_text += "* (관련 최신 기사 없음)\n"
-                output_text += "\n"
-            
-            st.markdown(output_text)
-            st.download_button("📋 텍스트 파일로 다운로드", output_text, f"Roche_News_{datetime.now().strftime('%Y%m%d')}.txt")
-        else:
-            st.warning("선택된 기사가 없습니다. 위의 표에서 뉴스레터에 넣을 기사의 체크박스를 먼저 클릭해 주세요!")
+                for cat in KEYWORDS.keys():
+                    output_text += f"**{cat}**\n"
+                    cat_df = selected_df[selected_df["카테고리"] == cat]
+                    
+                    if not cat_df.empty:
+                        for _, r in cat_df.iterrows():
+                            output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} {r['게재일']})\n"
+                    else:
+                        output_text += "* (관련 최신 기사 없음)\n"
+                    output_text += "\n"
+                
+                st.markdown(output_text)
+                st.download_button("📋 텍스트 파일로 다운로드", output_text, f"Roche_News_{datetime.now().strftime('%Y%m%d')}.txt")
+            else:
+                st.warning("선택된 기사가 없습니다. 각 탭에서 포함시킬 기사의 체크박스를 눌러주세요!")
 else:
-    st.info("현재 수집된 기사가 없습니다.")
+    st.info("현재 수집된 최근 기사가 없습니다.")
