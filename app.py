@@ -66,9 +66,12 @@ PRODUCT_KEYWORDS = [
 # 4. 제외 키워드
 NEGATIVE_KEYWORDS = ["집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가"]
 
-# 5. 정교 규칙 매칭 함수
+# 5. 정교 규칙 매칭 함수 (Corporate 우선순위 재정립)
 def classify_article_by_rules(text):
-    # 1) Corporate News (로슈/기업 전용 단독 키워드 최우선 분류)
+    # 1) Corporate News 매칭 (로슈 기업 동향, 인사, CSR, 단독 키워드 최우선 분류)
+    if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
+        return "Corporate News", "(로슈*기업동향/CSR)"
+        
     for ck in CORPORATE_KEYWORDS:
         if re.search(re.escape(ck), text, re.I):
             return "Corporate News", ck
@@ -106,7 +109,7 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 6. 연관도 점수 세부 산정 (폐암 변이 가감점 반영)
+# 6. 연관도 점수 세부 산정 (폐암 변이 가감점 포함)
 def calculate_relevance_score(title, summary, category):
     full_text = f"{title} {summary}"
     score = 4
@@ -116,16 +119,12 @@ def calculate_relevance_score(title, summary, category):
     if any(k in full_text for k in ["로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디"]): score += 2
     if any(p in full_text for p in ["약가", "암질심", "위험분담제", "급여", "심평원", "식약처"]): score += 1
 
-    # 폐암 기사 관련 변이 가감점 로직
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
-        # ALK, KRAS 변이 가점 (+2점)
         if re.search(r"ALK|KRAS", full_text, re.I):
             score += 2
-        # ROS, EGFR 변이 감점 (-2점)
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I):
             score -= 2
 
-    # 점수 범위 제한 (1점 ~ 10점)
     return max(1, min(score, 10))
 
 # 7. 뉴스 수집 로직
@@ -196,7 +195,9 @@ if not raw_df.empty:
         st.success("스마트 분석 완료! 카테고리별 핵심 기사 상위 5개가 선택되었습니다.")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
-    categories = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
+    categories = ["Corporate News", "Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
+    # 카테고리 중복 제거
+    categories = list(dict.fromkeys(categories))
     tabs = st.tabs([f"📌 {cat}" for cat in categories])
     
     all_edited_dfs = []
