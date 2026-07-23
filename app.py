@@ -2,19 +2,19 @@ import streamlit as st
 import feedparser
 import pandas as pd
 import re
+import requests
 from datetime import datetime, timedelta
 from time import mktime
 from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard (통합 매체 엔진)")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard (초고속 엔진)")
 
-# 1. 수집 매체 전체 통합 리스트 (일간/경제지 + 의약전문지 전수 포함)
+# 1. 수집 매체 전체 통합 리스트
 ALL_MEDIA_LIST = [
     # =========================================================
     # 1. 종합일간지 / 경제지 / 통신사 (General / Economy)
     # =========================================================
-    # [Tier 1] 주요 메이저 일간지 / 경제지 / 3대 통신사
     {"media": "연합뉴스", "type": "General", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
     {"media": "뉴시스", "type": "General", "tier": "1 Tier", "rss": "https://www.newsis.com/RSS/sitemap.xml"},
     {"media": "뉴스1", "type": "General", "tier": "1 Tier", "rss": "https://www.news1.kr/rss/all.xml"},
@@ -24,7 +24,6 @@ ALL_MEDIA_LIST = [
     {"media": "매일경제", "type": "General", "tier": "1 Tier", "rss": "https://www.mk.co.kr/rss/30000001/"},
     {"media": "한국경제", "type": "General", "tier": "1 Tier", "rss": "https://www.hankyung.com/feed/all-news"},
 
-    # [Tier 2] 기타 일간지 / 경제지 / 방송 / IT
     {"media": "조선비즈", "type": "General", "tier": "2 Tier", "rss": "https://biz.chosun.com/rss/all.xml"},
     {"media": "IT조선", "type": "General", "tier": "2 Tier", "rss": "https://it.chosun.com/rss/all.xml"},
     {"media": "코리아중앙데일리", "type": "General", "tier": "2 Tier", "rss": "https://koreajoongangdaily.joins.com/rss/all.xml"},
@@ -91,7 +90,6 @@ ALL_MEDIA_LIST = [
     # =========================================================
     # 2. 제약 / 바이오 / 의료 / 헬스 전문지 (Pharma Specialty)
     # =========================================================
-    # [Tier 1] 핵심 주요 전문지 11곳
     {"media": "청년의사", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.docdocdoc.co.kr/rss/allArticle.xml"},
     {"media": "데일리팜", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailypharm.com/Users/Rss/Rss.html"},
     {"media": "의학신문", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.bosa.co.kr/rss/allArticle.xml"},
@@ -104,7 +102,6 @@ ALL_MEDIA_LIST = [
     {"media": "코리아헬스로그", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.koreahealthlog.com/rss/allArticle.xml"},
     {"media": "데일리메디", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailymedi.com/rss/allArticle.xml"},
 
-    # [Tier 2] 기타 의약 / 바이오 / 헬스 전문지 전체
     {"media": "건강보험신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khip.co.kr/rss/allArticle.xml"},
     {"media": "건강보험저널", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khnews.co.kr/rss/allArticle.xml"},
     {"media": "닥터W", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.doctorw.co.kr/rss/allArticle.xml"},
@@ -245,7 +242,7 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 점수 계산 함수 (Tier 1 가점 우대 반영)
+# 점수 계산 함수
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
@@ -294,15 +291,19 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
             if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
         if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 2
 
-    # Tier 1 매체 (일간지/전문지 주요 매체) 우대 (+1점)
     if tier == "1 Tier": score += 1
     return max(1, min(score, 10))
 
-# 단일 매체 파싱
+# 초고속 단일 매체 파싱 (타임아웃 3초 적용)
 def parse_single_media(m, time_limit):
     sub_results = []
     try:
-        feed = feedparser.parse(m["rss"])
+        # 타임아웃을 적용한 신속 요청
+        response = requests.get(m["rss"], timeout=3, headers={"User-Agent": "Mozilla/5.0"})
+        if response.status_code != 200:
+            return sub_results
+            
+        feed = feedparser.parse(response.content)
         for entry in feed.entries:
             title = entry.get("title", "")
             link = entry.get("link", "")
@@ -341,13 +342,13 @@ def parse_single_media(m, time_limit):
         pass
     return sub_results
 
-# 병렬 수집 로직
+# 병렬 수집 로직 (60개 병렬 스레드로 대폭 확대)
 @st.cache_data(ttl=1800)
 def fetch_recent_news():
     time_limit = datetime.now() - timedelta(hours=36)
     all_results = []
 
-    with ThreadPoolExecutor(max_workers=30) as executor:
+    with ThreadPoolExecutor(max_workers=60) as executor:
         futures = [executor.submit(parse_single_media, m, time_limit) for m in ALL_MEDIA_LIST]
         for future in futures:
             all_results.extend(future.result())
@@ -371,7 +372,7 @@ with col_btn:
         st.rerun()
 
 raw_df = st.session_state["news_df"]
-st.write(f"⏰ 수집된 최신 기사: **{len(raw_df)}건** (총 {len(ALL_MEDIA_LIST)}개 매체 가동 중)")
+st.write(f"⚡ 초고속 수집 완료: 최신 기사 **{len(raw_df)}건** (총 {len(ALL_MEDIA_LIST)}개 매체 대상)")
 
 if not raw_df.empty:
     if st.button("🎯 중요 기사 자동 선별하기 (Top 5 자동 체크)", type="primary"):
@@ -412,7 +413,7 @@ if not raw_df.empty:
 
     st.divider()
 
-    # ★ Roche 마크다운 뉴스레터 템플릿 생성 엔진 ★
+    # Roche 마크다운 뉴스레터 템플릿 생성 엔진
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
