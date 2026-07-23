@@ -1,12 +1,14 @@
-import streamlit as st
-import feedparser
-import pandas as pd
-import re
-import requests
 import os
+import re
 from datetime import datetime, timedelta
 from time import mktime
 from concurrent.futures import ThreadPoolExecutor
+from difflib import SequenceMatcher
+
+import feedparser
+import pandas as pd
+import requests
+import streamlit as st
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
 st.title("📰 한국로슈 Daily News Monitoring Dashboard")
@@ -16,9 +18,7 @@ HISTORY_FILE = "selected_articles_history.csv"
 
 # 1. 수집 매체 전체 통합 리스트
 ALL_MEDIA_LIST = [
-    # =========================================================
-    # 1. 종합일간지 / 경제지 / 통신사 (General / Economy)
-    # =========================================================
+    # General / Economy
     {"media": "연합뉴스", "type": "General", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
     {"media": "뉴시스", "type": "General", "tier": "1 Tier", "rss": "https://www.newsis.com/RSS/sitemap.xml"},
     {"media": "뉴스1", "type": "General", "tier": "1 Tier", "rss": "https://www.news1.kr/rss/all.xml"},
@@ -27,7 +27,6 @@ ALL_MEDIA_LIST = [
     {"media": "동아일보", "type": "General", "tier": "1 Tier", "rss": "https://rss.donga.com/total.xml"},
     {"media": "매일경제", "type": "General", "tier": "1 Tier", "rss": "https://www.mk.co.kr/rss/30000001/"},
     {"media": "한국경제", "type": "General", "tier": "1 Tier", "rss": "https://www.hankyung.com/feed/all-news"},
-
     {"media": "조선비즈", "type": "General", "tier": "2 Tier", "rss": "https://biz.chosun.com/rss/all.xml"},
     {"media": "IT조선", "type": "General", "tier": "2 Tier", "rss": "https://it.chosun.com/rss/all.xml"},
     {"media": "코리아중앙데일리", "type": "General", "tier": "2 Tier", "rss": "https://koreajoongangdaily.joins.com/rss/all.xml"},
@@ -91,9 +90,7 @@ ALL_MEDIA_LIST = [
     {"media": "뷰어스", "type": "General", "tier": "2 Tier", "rss": "https://theviewers.co.kr/rss/allArticle.xml"},
     {"media": "뉴스웨이", "type": "General", "tier": "2 Tier", "rss": "https://www.newsway.co.kr/rss/allArticle.xml"},
 
-    # =========================================================
-    # 2. 제약 / 바이오 / 의료 / 헬스 전문지 (Pharma Specialty)
-    # =========================================================
+    # Pharma Specialty
     {"media": "청년의사", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.docdocdoc.co.kr/rss/allArticle.xml"},
     {"media": "데일리팜", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailypharm.com/Users/Rss/Rss.html"},
     {"media": "의학신문", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.bosa.co.kr/rss/allArticle.xml"},
@@ -105,7 +102,6 @@ ALL_MEDIA_LIST = [
     {"media": "KBR", "type": "Specialty", "tier": "1 Tier", "rss": "http://www.koreabiomed.com/rss/allArticle.xml"},
     {"media": "코리아헬스로그", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.koreahealthlog.com/rss/allArticle.xml"},
     {"media": "데일리메디", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailymedi.com/rss/allArticle.xml"},
-    
     {"media": "메디파나뉴스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.medipana.com/rss/allArticle.xml"},
     {"media": "메디칼업저버", "type": "Specialty", "tier": "1 Tier", "rss": "http://www.monews.co.kr/rss/allArticle.xml"},
     {"media": "헬스동아", "type": "Specialty", "tier": "1 Tier", "rss": "https://donga.com/news/rss/health"},
@@ -113,7 +109,6 @@ ALL_MEDIA_LIST = [
     {"media": "헬스조선", "type": "Specialty", "tier": "1 Tier", "rss": "https://health.chosun.com/site/data/rss/rss.xml"},
     {"media": "매경헬스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.mkhealth.co.kr/rss/allArticle.xml"},
     {"media": "헬스중앙", "type": "Specialty", "tier": "1 Tier", "rss": "https://jhealthmedia.joins.com/rss/allArticle.xml"},
-
     {"media": "건강보험신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khip.co.kr/rss/allArticle.xml"},
     {"media": "건강보험저널", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khnews.co.kr/rss/allArticle.xml"},
     {"media": "닥터W", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.doctorw.co.kr/rss/allArticle.xml"},
@@ -185,7 +180,7 @@ DISEASE_KEYWORDS = [
     "망막학회", "대한감염학회", "면역항암제", "항체의약품", "세포치료제", "생물의약품", "바이오시밀러", 
     "DMD", "뒤센근이영양증", "듀센근이영양증", "DLBCL", 
     "엡킨리", "다발성경화증", "티사브리", "렘트라다", "울토미리스", "Ultomiris", "라불리주맙", "Ravulizumab", 
-    "업리즈나", "이네빌리주맙", "티루캡", "피크레이", "조기암", "조기유방암", "젊은유방암"
+    "업리즈나", "이네빌리주맙", "티루캡", "피크레이", "조기암", "조기유방암", "젊은유방암", "타그리소", "렉라자"
 ]
 
 INDUSTRY_SINGLE_KEYWORDS = [
@@ -251,71 +246,85 @@ def classify_article_by_rules(text):
 
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
-    score = 3
+    
+    # 0점에서 출발하여 엄격하게 스코어링
+    score = 0
 
-    # ★ [오탐 제거 1] 컬럼비아 대학교 관련 연구 기사 강력 감점 (-8점) ★
+    # 1. 강력 감점 요인 (오탐 및 비관련 기사 필터링)
     if re.search(r"컬럼비아\s*대|컬럼비아대|컬럼비아\s*대학교|columbia\s*univ", full_text, re.I):
         score -= 8
 
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단"]):
         score -= 4
 
+    # 2. 카테고리 기본 매칭 점수 (+1점)
+    score += 1
+
+    # 3. 카테고리별 세부 정교화 평가
     if category == "Corporate News":
-        score += 4
-        if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 2
-
-    elif category == "Product News":
-        score += 3
-        if any(core in full_text for core in ["티쎈트릭", "아바스틴", "알레센자", "바비스모", "에브리스디", "엔스프링", "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]): score += 2
-
-    elif category == "Disease/ Market News":
-        score += 3
-        
-        # ★ [정교화 1] 키트루다는 로슈 주요 질환군과 묶였을 때만 가점 (+3점) ★
-        if "키트루다" in full_text:
-            if any(roche_dis in full_text for roche_dis in ["폐암", "비소세포폐암", "유방암", "간암", "혈액암", "DLBCL", "TNBC"]):
-                score += 3
-
-        # ★ [정교화 2] 혈액암은 DLBCL 또는 소포성림프종과 묶였을 때만 가점 (+3점) ★
-        if "혈액암" in full_text:
-            if any(ly in full_text for ly in ["DLBCL", "소포성림프종", "소포성 림프종", "미세거대B세포림프종"]):
-                score += 3
-
-        # ★ [정교화 3] 유방암은 HER2+, HER2 양성과 묶였을 때만 가점 (+3점) ★
-        if "유방암" in full_text:
-            if re.search(r"HER2|HER2양성|HER2\+|HER2\s*양성", full_text, re.I):
-                score += 3
-
-        if any(comp in full_text for comp in ["옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"]):
+        # 로슈/한국로슈 직접 언급 및 기업동향
+        if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]):
+            score += 3
+        if re.search(r"실적|대표|인사|CSR|사회공헌|투자|협약", full_text):
             score += 2
 
-        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "SMA", "황반변성", "간암", "NMOSD"]):
-            if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
-                score += 1
+    elif category == "Product News":
+        # 로슈 핵심 제품군 직접 언급
+        if any(core in full_text for core in ["티쎈트릭", "아바스틴", "알레센자", "바비스모", "에브리스디", "엔스프링", "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]):
+            score += 3
+        if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
+            score += 2
+
+    elif category == "Disease/ Market News":
+        comp_drugs = ["키트루다", "엔허투", "타그리소", "렉라자", "아일리아", "스핀라자", "옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "예스카타", "울토미리스", "업리즈나"]
+        target_conditions = ["HER2", "HER2양성", "HER2+", "DLBCL", "소포성림프종", "ALK", "SMA", "척수성근위축증", "NMOSD", "시신경척수염", "황반변성", "비소세포폐암", "TNBC", "삼중음성"]
+        major_events = ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]
+        
+        has_comp = any(c in full_text for c in comp_drugs)
+        has_target = any(re.search(tc, full_text, re.I) for tc in target_conditions)
+        has_event = any(ev in full_text for ev in major_events)
+
+        # [🎯 Track 1: 경쟁사 X 로슈 세부 질환 X 주요 이슈 결합 (최상위 조합, +4점)]
+        if has_comp and has_target and has_event:
+            score += 4
+        elif has_comp and (has_target or has_event):
+            score += 2
+
+        # [🎯 Track 2: KOL 연구결과 & 보건 통계/가이드라인 레퍼런스 (+3점)]
+        is_kol_research = re.search(r"(교수|연구팀|임상\s*발표|국제학회|게재|학술지|연구결과|발표회)", full_text)
+        is_gov_stats = re.search(r"(질병청|질병관리청|통계|발병률\s*1위|주의보|가이드라인|치료지침|지침\s*개정)", full_text)
+
+        if (is_kol_research or is_gov_stats) and has_target:
+            score += 3
+        elif is_kol_research or is_gov_stats:
+            score += 1
 
     elif category == "Industry/ Policy News":
-        score += 2
-        if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]): score += 2
-        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]): score += 2
+        # 핵심 정책/약가 이슈
+        if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]):
+            score += 3
+        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]):
+            score += 2
         if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
-            if any(policy in full_text for policy in ["정책", "개편", "가이드라인", "고시", "제도", "인사"]): score += 1
-        if any(mNC in full_text for mNC in ["다국적", "글로벌", "외자사", "KRPIA"]):
-            if any(m_evt in full_text for m_evt in ["약가", "규제", "제도", "인사", "CSR"]): score += 1
-        if any(pt in full_text for pt in ["환자단체", "환우회", "환자"]):
-            if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS): score += 2
-            if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS): score -= 2
+            score += 1
 
-    if category == "Industry/ Policy News":
-        if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]): score += 2
-    else:
-        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "피크레이", "티루캡"]): score += 2
+    # 4. 제목 포함 가점 (+1점)
+    if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "약가", "급여", "국감"]):
+        score += 1
 
+    # 5. 폐암 세부 타깃 보정
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
-            if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
-        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
+            if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): 
+                score += 1
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): 
+            score -= 1
 
-    if tier == "1 Tier": score += 1
+    # 6. 매체 Tier 가점 (+1점)
+    if tier == "1 Tier": 
+        score += 1
+
+    # 최소 1점 ~ 최대 10점 범위 보정
     return max(1, min(score, 10))
 
 def parse_single_media(m, time_limit):
@@ -358,11 +367,58 @@ def parse_single_media(m, time_limit):
                     "검색키워드": matched_kw,
                     "기사제목": title,
                     "기사링크": link,
-                    "게재일": pub_date_str
+                    "게재일": pub_date_str,
+                    "pub_dt": pub_dt if pub_dt else datetime.now()
                 })
     except Exception:
         pass
     return sub_results
+
+# 🎯 3. 텍스트 유사도 기반 중복 기사 군집화 및 대표 1건 선정 함수
+def cluster_and_mark_representatives(df, threshold=0.70):
+    if df.empty:
+        return df
+    
+    df = df.copy()
+    df["is_representative"] = False
+    df["cluster_id"] = -1
+    
+    # 정제된 제목 생성 (특수문자 제거, 공백 정규화)
+    clean_titles = [re.sub(r"[^\w\s]", "", t).strip().lower() for t in df["기사제목"]]
+    
+    cluster_cnt = 0
+    assigned = [False] * len(df)
+    
+    for i in range(len(df)):
+        if assigned[i]:
+            continue
+        
+        cluster_indices = [i]
+        assigned[i] = True
+        
+        for j in range(i + 1, len(df)):
+            if assigned[j]:
+                continue
+            sim = SequenceMatcher(None, clean_titles[i], clean_titles[j]).ratio()
+            if sim >= threshold:
+                cluster_indices.append(j)
+                assigned[j] = True
+        
+        # 클러스터 매핑
+        df.iloc[cluster_indices, df.columns.get_loc("cluster_id")] = cluster_cnt
+        
+        # 대표 1건 선정: Tier 1 우선 -> 연관도 점수 high -> 빠른 게재일
+        sub_df = df.iloc[cluster_indices].copy()
+        sub_df["tier_score"] = sub_df["Tier"].apply(lambda x: 1 if x == "1 Tier" else 2)
+        best_idx = sub_df.sort_values(
+            by=["tier_score", "연관도점수", "pub_dt"],
+            ascending=[True, False, True]
+        ).index[0]
+        
+        df.iloc[best_idx, df.columns.get_loc("is_representative")] = True
+        cluster_cnt += 1
+        
+    return df
 
 @st.cache_data(ttl=1800)
 def fetch_recent_news():
@@ -377,6 +433,7 @@ def fetch_recent_news():
     df_res = pd.DataFrame(all_results)
     if not df_res.empty:
         df_res = df_res.sort_values(by=["연관도점수", "Tier"], ascending=[False, True]).drop_duplicates(subset=["기사제목"], keep="first")
+        df_res = cluster_and_mark_representatives(df_res)
     return df_res
 
 def save_selected_history(selected_df):
@@ -384,6 +441,11 @@ def save_selected_history(selected_df):
         save_data = selected_df.copy()
         save_data["선택시각"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # 메타 필드 삭제 후 저장
+        cols_to_drop = [c for c in ["pub_dt", "is_representative", "cluster_id"] if c in save_data.columns]
+        if cols_to_drop:
+            save_data = save_data.drop(columns=cols_to_drop)
+
         if os.path.exists(HISTORY_FILE):
             save_data.to_csv(HISTORY_FILE, mode='a', header=False, index=False, encoding='utf-8-sig')
         else:
@@ -416,13 +478,19 @@ if os.path.exists(HISTORY_FILE):
 st.write(f"⚡ 초고속 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습용 데이터 축적: **{history_count}건**")
 
 if not raw_df.empty:
-    if st.button("🎯 중요 기사 자동 선별하기 (Top 5 자동 체크)", type="primary"):
+    if st.button("🎯 중요 기사 자동 선별하기 (대표 기사 Top 5 자동 체크)", type="primary"):
         auto_df = raw_df.copy()
+        auto_df["선택"] = False  # 초기화
+        
+        # 🎯 중복 도배 방지: 클러스터 대표 기사(is_representative=True) 중에서만 각 카테고리별 Top 5 체크
         for cat in CATEGORIES_LIST:
-            cat_indices = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False).head(5).index
-            auto_df.loc[cat_indices, "선택"] = True
+            cat_rep_indices = auto_df[
+                (auto_df["카테고리"] == cat) & (auto_df["is_representative"] == True)
+            ].sort_values(by="연관도점수", ascending=False).head(5).index
+            auto_df.loc[cat_rep_indices, "선택"] = True
+            
         st.session_state["analyzed_df"] = auto_df
-        st.success("스마트 분석 완료!")
+        st.success("대표 기사 위주 스마트 분석 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
@@ -435,10 +503,17 @@ if not raw_df.empty:
             st.markdown(f"### {cat} ({len(cat_df)}건)")
             
             if not cat_df.empty:
+                # 시각적 구분을 위한 포맷 적용
+                cat_df["대표여부"] = cat_df["is_representative"].apply(lambda x: "⭐ 대표" if x else "🔗 유사중복")
+                
+                # 데이터 에디터 노출용 컬럼 순서 정렬
+                show_cols = ["선택", "대표여부", "연관도점수", "카테고리", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"]
+                
                 edited = st.data_editor(
-                    cat_df,
+                    cat_df[show_cols],
                     column_config={
                         "선택": st.column_config.CheckboxColumn("선택 ✅", default=False),
+                        "대표여부": st.column_config.TextColumn("대표 구분 💡"),
                         "카테고리": st.column_config.SelectboxColumn(
                             "카테고리 🔄",
                             help="기사를 다른 카테고리로 변경하려면 클릭하여 선택하세요 (변경 후 Enter)",
@@ -448,7 +523,7 @@ if not raw_df.empty:
                         "연관도점수": st.column_config.NumberColumn("연관도 🎯", help="10점 만점 기준"),
                         "기사링크": st.column_config.LinkColumn("기사링크")
                     },
-                    disabled=["연관도점수", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
+                    disabled=["대표여부", "연관도점수", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
                     hide_index=True,
                     use_container_width=True,
                     key=f"editor_{cat}"
@@ -509,7 +584,7 @@ if not raw_df.empty:
 
 st.divider()
 
-# ★ 🧠 AI 학습 데이터 개별 / 전체 삭제 및 관리 센터 ★
+# 🧠 AI 학습 데이터 개별 / 전체 삭제 및 관리 센터
 with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클릭하여 열기)", expanded=False):
     if os.path.exists(HISTORY_FILE) and not history_df.empty:
         st.write(f"현재 총 **{len(history_df)}건**의 선택 데이터가 누적 저장되어 있습니다.")
@@ -540,7 +615,7 @@ with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클
                     st.success("선택한 항목이 정상적으로 삭제되었습니다!")
                     st.rerun()
                 else:
-                    st.warning("삭제할 항목이 선택되지 않았습니다.")
+                    st.warning("삭제할 항목이 선택되지 않았습니나.")
 
         with col_del2:
             csv_data = history_df.to_csv(index=False, encoding='utf-8-sig')
