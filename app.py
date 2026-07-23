@@ -1,11 +1,3 @@
-요청하신 모든 내용이 완벽하게 반영된 app.py 최종 풀 버전 파이썬 코드입니다!
-
-이번 업데이트에서 약평위, KOBIA, 건보재정, 경제성평가 등 말씀해주신 핵심 정책 단독 키워드들을 알차게 추가하였으며, 폐암 변이 가감점 로직(ALK/KRAS +2점, EGFR/ROS -2점) 및 28개 전체 매체 피드까지 하나도 빠짐없이 100% 탑재되어 있습니다.
-
-GitHub에서 app.py 파일 전체를 아래 코드로 싹 덮어쓰기(Commit changes) 하시면 끝납니다!
-
-💻 GitHub app.py 최종 전체 교체 코드
-Python
 import streamlit as st
 import feedparser
 import pandas as pd
