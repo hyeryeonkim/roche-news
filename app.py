@@ -4,11 +4,12 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 from time import mktime
+from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard (Industry 정교화 엔진)")
 
-# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체)
+# 1. 수집 매체 리스트 (28개 전체 매체)
 ALL_MEDIA_LIST = [
     # [1 Tier] 주요 통신사 및 종합 일간지
     {"media": "연합뉴스", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
@@ -73,13 +74,12 @@ DISEASE_KEYWORDS = [
 ]
 
 INDUSTRY_SINGLE_KEYWORDS = [
-    "약평위", "암질심", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위",
+    "약평위", "암질심", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위", "국정감사", "국감",
     "KRPIA", "한국글로벌의약산업협회", "KOBIA", "한국바이오의약품협회", "한국제약바이오협회",
-    "약가협상", "약가인하", "약가", "급여재평가", "위험분담제", "RSA", "경제성평가", 
+    "약가협상", "약가인하", "약가제도", "경평면제", "위험분담제", "RSA", "경제성평가", "급여재평가",
     "고가의약품", "초고가신약", "사전심의", "사용량-약가연동", "RWD", "RWE",
     "혁신신약", "혁신형제약기업", "정밀의료", "정밀의학", "맞춤의학", "디지털헬스케어", 
-    "디지털바이오마커", "보건의료데이터", "신의료기술", "건보재정", "건강보험정책", 
-    "분산형임상", "DCT"
+    "디지털바이오마커", "보건의료데이터", "신의료기술", "건보재정", "건강보험정책", "분산형임상", "DCT"
 ]
 
 NEGATIVE_KEYWORDS = [
@@ -87,21 +87,34 @@ NEGATIVE_KEYWORDS = [
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
+# 자사 관련 핵심 질환 키워드 (환자단체 가점용)
+ROCHE_DISEASE_AREAS = [
+    "폐암", "비소세포폐암", "유방암", "간암", "혈액암", "림프종", "DLBCL",
+    "SMA", "척수성근위축증", "NMOSD", "시신경척수염", "황반변성", "황반부종",
+    "희귀질환", "희귀난치성질환", "루푸스", "다발성경화증", "DMD", "근이영양증"
+]
+
+# 비관련 질환 키워드 (환자단체 감점용)
+UNRELATED_DISEASE_AREAS = [
+    "아토피", "건선", "당뇨", "고혈압", "치매", "알츠하이머", "탈모", "통풍", "골다공증", "성조숙증", "비만"
+]
+
 # 카테고리 매칭 함수
 def classify_article_by_rules(text):
+    text_lower = text.lower()
     if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
         return "Corporate News", "(로슈*기업동향/CSR)"
         
     for ck in CORPORATE_KEYWORDS:
-        if ck.lower() in text.lower():
+        if ck.lower() in text_lower:
             return "Corporate News", ck
 
     for p in PRODUCT_KEYWORDS:
-        if p.lower() in text.lower():
+        if p.lower() in text_lower:
             return "Product News", p
 
     for dk in DISEASE_KEYWORDS:
-        if dk.lower() in text.lower():
+        if dk.lower() in text_lower:
             return "Disease/ Market News", dk
 
     if re.search(r"암", text) and re.search(r"항암제", text) and re.search(r"임상|허가|급여|적응증|3상|제약|신약|FDA|암질심", text):
@@ -110,7 +123,7 @@ def classify_article_by_rules(text):
         return "Disease/ Market News", "(독감*치료제/감염병)"
 
     for ik in INDUSTRY_SINGLE_KEYWORDS:
-        if ik.lower() in text.lower():
+        if ik.lower() in text_lower:
             return "Industry/ Policy News", ik
 
     if re.search(r"다국적|글로벌|외자사", text, re.I) and re.search(r"제약사|제약업계|제약기업|제약업체", text) and re.search(r"인사|동정|수상|CSR|사회공헌|인수|합병|리베이트", text):
@@ -119,22 +132,27 @@ def classify_article_by_rules(text):
         return "Industry/ Policy News", "(R&D/특허*의약품)"
     if re.search(r"급여|접근성|보장성|보험|비급여", text) and re.search(r"의약품|약품|신약|항암|치료", text):
         return "Industry/ Policy News", "(급여/보장성*의약품)"
-    if re.search(r"환자단체총연합회|백혈병환우회|희귀난치성질환연합회", text) and re.search(r"항암제|치료제|탄원|정책|암|희귀질환|신약", text):
+    if re.search(r"환자단체총연합회|백혈병환우회|희귀난치성질환연합회|환우회|환자단체", text) and re.search(r"항암제|치료제|탄원|정책|암|희귀질환|신약", text):
         return "Industry/ Policy News", "(환자단체*정책)"
 
     return None, None
 
-# 점수 계산 함수
+# [Industry 뉴스 정교화 적용된 점수 계산 함수]
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
+    # -------------------------------------------------------------
+    # 1. 카테고리별 세부 스코어링
+    # -------------------------------------------------------------
     if category == "Corporate News":
         score += 4
         if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 2
+
     elif category == "Product News":
         score += 3
         if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디"]): score += 2
+
     elif category == "Disease/ Market News":
         score += 3
         if any(comp in full_text for comp in ["키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나"]):
@@ -142,82 +160,127 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if any(dis in full_text for dis in ["비소세포폐암", "폐암", "SMA", "황반변성", "유방암", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
                 score += 1
+
+    # ★ [Industry / Policy News 고도화 가감점] ★
     elif category == "Industry/ Policy News":
         score += 2
-        if any(p in full_text for p in ["약가인하", "약가협상", "암질심", "약평위", "위험분담제", "RSA", "급여재평가"]):
+        
+        # [우선순위 1] 약가 제도 / 급여 / 위험분담제 / 경평면제 (+2점)
+        if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]):
             score += 2
 
-    if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "약가", "암질심", "약평위", "위험분담제", "급여", "심평원", "식약처"]):
-        score += 2
+        # [우선순위 2] 국회 / 보건복지위 / 국정감사 / 입법 동향 (+2점)
+        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "개정안"]):
+            score += 2
 
+        # [우선순위 3] 4대 주요 기관 정책 및 제도 변경 (+1점)
+        if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
+            if any(policy in full_text for policy in ["정책", "개편", "가이드라인", "고시", "제도", "인사"]):
+                score += 1
+
+        # [우선순위 4] 외자사 / 글로벌 제약 관련 규제 및 이슈 (+1점)
+        if any(mNC in full_text for mNC in ["다국적", "글로벌", "외자사", "KRPIA"]):
+            if any(m_evt in full_text for m_evt in ["약가", "규제", "제도", "인사", "CSR"]):
+                score += 1
+
+        # [우선순위 5] 환자단체 관련 스마트 가감점 (아이디어 반영!)
+        if any(pt in full_text for pt in ["환자단체", "환우회", "환자"]):
+            # 관련 질환 영역 환자단체 보도 시 가점 (+2점)
+            if any(r_dis in full_text for r_dis in ROCHE_DISEASE_AREAS):
+                score += 2
+            # 무관 질환 영역 환자단체 보도 시 감점 (-2점)
+            if any(u_dis in full_text for u_dis in UNRELATED_DISEASE_AREAS):
+                score -= 2
+
+    # -------------------------------------------------------------
+    # 2. 제목(Title) 가중치 (카테고리별 핵심어 제목 포함 시 +2점)
+    # -------------------------------------------------------------
+    if category == "Industry/ Policy News":
+        if any(k in title for k in ["약가", "급여", "보건복지위", "국감", "국정감사", "위험분담제", "RSA", "경평면제", "심평원", "식약처", "약평위", "암질심"]):
+            score += 2
+    else:
+        if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자"]):
+            score += 2
+
+    # -------------------------------------------------------------
+    # 3. 폐암 변이 가감점 및 매체 Tier 우대
+    # -------------------------------------------------------------
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
 
     if tier == "1 Tier": score += 1
+
     return max(1, min(score, 10))
 
-# [속도 개선 핵심] 캐시 시간 30분(ttl=1800)으로 대폭 확대
+# 단일 매체 파싱
+def parse_single_media(m, time_limit):
+    sub_results = []
+    try:
+        feed = feedparser.parse(m["rss"])
+        for entry in feed.entries:
+            title = entry.get("title", "")
+            link = entry.get("link", "")
+            summary = entry.get("summary", entry.get("description", ""))
+            full_text = f"{title} {summary}"
+            
+            if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
+                continue
+            
+            pub_dt = None
+            if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
+            elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                pub_dt = datetime.fromtimestamp(mktime(entry.updated_parsed))
+            
+            if pub_dt and pub_dt < time_limit:
+                continue
+            
+            pub_date_str = pub_dt.strftime('%m/%d') if pub_dt else datetime.now().strftime('%m/%d')
+            matched_cat, matched_kw = classify_article_by_rules(full_text)
+            
+            if matched_cat:
+                rel_score = calculate_relevance_score(title, summary, matched_cat, tier=m["tier"])
+                sub_results.append({
+                    "선택": False,
+                    "연관도점수": rel_score,
+                    "카테고리": matched_cat,
+                    "매체명": m["media"],
+                    "Tier": m["tier"],
+                    "검색키워드": matched_kw,
+                    "기사제목": title,
+                    "기사링크": link,
+                    "게재일": pub_date_str
+                })
+    except:
+        pass
+    return sub_results
+
+# 병렬 수집 로직
 @st.cache_data(ttl=1800)
 def fetch_recent_news():
-    results = []
-    now = datetime.now()
-    time_limit = now - timedelta(hours=36)
+    time_limit = datetime.now() - timedelta(hours=36)
+    all_results = []
 
-    for m in ALL_MEDIA_LIST:
-        try:
-            feed = feedparser.parse(m["rss"])
-            for entry in feed.entries:
-                title = entry.get("title", "")
-                link = entry.get("link", "")
-                summary = entry.get("summary", entry.get("description", ""))
-                full_text = f"{title} {summary}"
-                
-                if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
-                    continue
-                
-                pub_dt = None
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
-                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                    pub_dt = datetime.fromtimestamp(mktime(entry.updated_parsed))
-                
-                if pub_dt and pub_dt < time_limit:
-                    continue
-                
-                pub_date_str = pub_dt.strftime('%m/%d') if pub_dt else now.strftime('%m/%d')
-                matched_cat, matched_kw = classify_article_by_rules(full_text)
-                
-                if matched_cat:
-                    rel_score = calculate_relevance_score(title, summary, matched_cat, tier=m["tier"])
-                    results.append({
-                        "선택": False,
-                        "연관도점수": rel_score,
-                        "카테고리": matched_cat,
-                        "매체명": m["media"],
-                        "Tier": m["tier"],
-                        "검색키워드": matched_kw,
-                        "기사제목": title,
-                        "기사링크": link,
-                        "게재일": pub_date_str
-                    })
-        except:
-            pass
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(parse_single_media, m, time_limit) for m in ALL_MEDIA_LIST]
+        for future in futures:
+            all_results.extend(future.result())
     
-    df_res = pd.DataFrame(results)
+    df_res = pd.DataFrame(all_results)
     if not df_res.empty:
         df_res = df_res.sort_values(by=["연관도점수", "Tier"], ascending=[False, True]).drop_duplicates(subset=["기사제목"], keep="first")
     return df_res
 
-# [속도 개선 핵심] 세션에 최초 수집 데이터 고정
+# 세션 초기화
 if "news_df" not in st.session_state:
     st.session_state["news_df"] = fetch_recent_news()
 
-# 상단 수집 컨트롤 영역
+# UI 레이아웃
 col_title, col_btn = st.columns([4, 1])
 with col_btn:
-    if st.button("🔄 뉴스 강제 새로고침"):
+    if st.button("🔄 실시간 뉴스 새로고침"):
         st.cache_data.clear()
         st.session_state["news_df"] = fetch_recent_news()
         st.session_state.pop("analyzed_df", None)
