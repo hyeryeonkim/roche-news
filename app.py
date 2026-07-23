@@ -8,7 +8,7 @@ from time import mktime
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
 st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
-# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체 풀 반영)
+# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체)
 ALL_MEDIA_LIST = [
     # [1 Tier] 주요 통신사 및 종합 일간지
     {"media": "연합뉴스", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
@@ -46,12 +46,8 @@ ALL_MEDIA_LIST = [
     {"media": "메디소비자뉴스", "tier": "2 Tier", "rss": "https://www.medisobizanews.com/rss/allArticle.xml"}
 ]
 
-# 2. Corporate 전용 단독 키워드 리스트
-CORPORATE_KEYWORDS = [
-    "로슈", "Roche", "Genentech", "제넨텍", "제넨테크", "쥬가이", "Chugai", "한국로슈"
-]
+CORPORATE_KEYWORDS = ["로슈", "Roche", "Genentech", "제넨텍", "제넨테크", "쥬가이", "Chugai", "한국로슈"]
 
-# 3. Product 단독 키워드 리스트
 PRODUCT_KEYWORDS = [
     "티쎈트릭", "Tecentriq", "아테졸리주맙", "atezolizumab", "맙테라", "Mabthera", "리툭시맙", "Rituximab", 
     "알레센자", "Alecensa", "알렉티닙", "alectinib", "셀셉트", "Cellcept", "미코페놀레이트모페틸", "마이코페놀레이트", "Mofetil", 
@@ -63,7 +59,6 @@ PRODUCT_KEYWORDS = [
     "글로피타맙", "컬럼비", "엘레비디스", "엘리비디스", "이나볼리십", "이토베비", "피아스카이", "크로발리맙", "트론티네맙"
 ]
 
-# 4. Disease / Market 뉴스 풀 버전 단독 키워드 리스트
 DISEASE_KEYWORDS = [
     "킴리아", "예스카타", "졸겐스마", "스핀라자", "오나셈노진아베파르보벡", "뉴시너센", "넥사바", "렌비마", 
     "키트루다", "옵디보", "아일리아", "비오뷰", "루센티스", "아필리부", "아이델젠트", "알룬브릭", "로비큐아", 
@@ -77,7 +72,6 @@ DISEASE_KEYWORDS = [
     "업리즈나", "이네빌리주맙", "티루캡", "피크레이", "조기암", "조기유방암"
 ]
 
-# 5. Industry / Policy 뉴스 고유 단독 키워드 리스트
 INDUSTRY_SINGLE_KEYWORDS = [
     "약평위", "암질심", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위",
     "KRPIA", "한국글로벌의약산업협회", "KOBIA", "한국바이오의약품협회", "한국제약바이오협회",
@@ -88,30 +82,26 @@ INDUSTRY_SINGLE_KEYWORDS = [
     "분산형임상", "DCT"
 ]
 
-# 6. 제외 키워드
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
-# 7. 정교 규칙 매칭 함수
+# 카테고리 매칭 함수
 def classify_article_by_rules(text):
-    # 1) Corporate News (로슈/기업 동향, CSR, 단독 키워드 최우선 분류)
     if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
         return "Corporate News", "(로슈*기업동향/CSR)"
         
     for ck in CORPORATE_KEYWORDS:
-        if re.search(re.escape(ck), text, re.I):
+        if ck.lower() in text.lower():
             return "Corporate News", ck
 
-    # 2) Product News 매칭
     for p in PRODUCT_KEYWORDS:
-        if re.search(re.escape(p), text, re.I):
+        if p.lower() in text.lower():
             return "Product News", p
 
-    # 3) Disease / Market News 매칭
     for dk in DISEASE_KEYWORDS:
-        if re.search(re.escape(dk), text, re.I):
+        if dk.lower() in text.lower():
             return "Disease/ Market News", dk
 
     if re.search(r"암", text) and re.search(r"항암제", text) and re.search(r"임상|허가|급여|적응증|3상|제약|신약|FDA|암질심", text):
@@ -119,9 +109,8 @@ def classify_article_by_rules(text):
     if re.search(r"독감|인플루엔자", text) and re.search(r"항바이러스제|치료제|치료|질병관리청|국가감염병|통계|조사", text):
         return "Disease/ Market News", "(독감*치료제/감염병)"
 
-    # 4) Industry / Policy News 매칭
     for ik in INDUSTRY_SINGLE_KEYWORDS:
-        if re.search(re.escape(ik), text, re.I):
+        if ik.lower() in text.lower():
             return "Industry/ Policy News", ik
 
     if re.search(r"다국적|글로벌|외자사", text, re.I) and re.search(r"제약사|제약업계|제약기업|제약업체", text) and re.search(r"인사|동정|수상|CSR|사회공헌|인수|합병|리베이트", text):
@@ -132,68 +121,45 @@ def classify_article_by_rules(text):
         return "Industry/ Policy News", "(급여/보장성*의약품)"
     if re.search(r"환자단체총연합회|백혈병환우회|희귀난치성질환연합회", text) and re.search(r"항암제|치료제|탄원|정책|암|희귀질환|신약", text):
         return "Industry/ Policy News", "(환자단체*정책)"
-    if re.search(r"재택치료|재택의료", text) and re.search(r"제약|의약품|바이오|치료제", text):
-        return "Industry/ Policy News", "(재택의료*제약)"
 
     return None, None
 
-# 8. 연관도 점수 세부 산정 (Disease/Market 카테고리 경쟁사 우대 로직 수정)
+# 점수 계산 함수
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
     if category == "Corporate News":
         score += 4
-        if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]):
-            score += 2
-
+        if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 2
     elif category == "Product News":
         score += 3
-        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디"]):
-            score += 2
-
+        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디"]): score += 2
     elif category == "Disease/ Market News":
         score += 3
-        # 경쟁사 주요 약제 동향은 Market News의 핵심이므로 가점!
-        if any(comp in full_text for comp in [
-            "키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", 
-            "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "엠겔티", "림카토"
-        ]):
+        if any(comp in full_text for comp in ["키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나"]):
             score += 2
-            
         if any(dis in full_text for dis in ["비소세포폐암", "폐암", "SMA", "황반변성", "유방암", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
                 score += 1
-
     elif category == "Industry/ Policy News":
         score += 2
-        if any(p in full_text for p in ["약가인하", "약가협상", "암질심", "약평위", "위험분담제", "RSA", "급여재평가", "RWD", "RWE"]):
+        if any(p in full_text for p in ["약가인하", "약가협상", "암질심", "약평위", "위험분담제", "RSA", "급여재평가"]):
             score += 2
 
-    # 제목(Title) 가중치 (카테고리 불문)
-    if any(k in title for k in [
-        "로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자",
-        "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자",
-        "약가", "암질심", "약평위", "위험분담제", "급여", "심평원", "식약처"
-    ]):
+    if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자", "약가", "암질심", "약평위", "위험분담제", "급여", "심평원", "식약처"]):
         score += 2
 
-    # 폐암 변이 기사 가감점
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
-            if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I):
-                score += 2
-        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I):
-            score -= 2
+            if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
 
-    # 1 Tier 매체 우대
-    if tier == "1 Tier":
-        score += 1
-
+    if tier == "1 Tier": score += 1
     return max(1, min(score, 10))
 
-# 9. 뉴스 수집 로직
-@st.cache_data(ttl=300)
+# [속도 개선 핵심] 캐시 시간 30분(ttl=1800)으로 대폭 확대
+@st.cache_data(ttl=1800)
 def fetch_recent_news():
     results = []
     now = datetime.now()
@@ -221,7 +187,6 @@ def fetch_recent_news():
                     continue
                 
                 pub_date_str = pub_dt.strftime('%m/%d') if pub_dt else now.strftime('%m/%d')
-                
                 matched_cat, matched_kw = classify_article_by_rules(full_text)
                 
                 if matched_cat:
@@ -245,10 +210,21 @@ def fetch_recent_news():
         df_res = df_res.sort_values(by=["연관도점수", "Tier"], ascending=[False, True]).drop_duplicates(subset=["기사제목"], keep="first")
     return df_res
 
-raw_df = fetch_recent_news()
+# [속도 개선 핵심] 세션에 최초 수집 데이터 고정
+if "news_df" not in st.session_state:
+    st.session_state["news_df"] = fetch_recent_news()
 
-# 10. UI 화면 구성
-st.write(f"⏰ 실시간 수집된 주요 뉴스: **{len(raw_df)}건**")
+# 상단 수집 컨트롤 영역
+col_title, col_btn = st.columns([4, 1])
+with col_btn:
+    if st.button("🔄 뉴스 강제 새로고침"):
+        st.cache_data.clear()
+        st.session_state["news_df"] = fetch_recent_news()
+        st.session_state.pop("analyzed_df", None)
+        st.rerun()
+
+raw_df = st.session_state["news_df"]
+st.write(f"⏰ 수집된 최신 기사: **{len(raw_df)}건**")
 
 if not raw_df.empty:
     if st.button("🎯 중요 기사 자동 선별하기 (Top 5 자동 체크)", type="primary"):
@@ -257,7 +233,7 @@ if not raw_df.empty:
             cat_indices = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False).head(5).index
             auto_df.loc[cat_indices, "선택"] = True
         st.session_state["analyzed_df"] = auto_df
-        st.success("스마트 분석 완료! 카테고리별 핵심 기사 상위 5개가 선택되었습니다.")
+        st.success("스마트 분석 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     categories = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
@@ -314,6 +290,6 @@ if not raw_df.empty:
                 st.markdown(output_text)
                 st.download_button("📋 텍스트 파일로 다운로드", output_text, f"Roche_News_{datetime.now().strftime('%Y%m%d')}.txt")
             else:
-                st.warning("선택된 기사가 없습니다. 상단 버튼을 누르거나 직접 선택해 주세요!")
+                st.warning("선택된 기사가 없습니다.")
 else:
     st.info("현재 수집된 기사가 없습니다.")
