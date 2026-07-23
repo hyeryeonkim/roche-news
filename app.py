@@ -197,7 +197,7 @@ INDUSTRY_SINGLE_KEYWORDS = [
 
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
-    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원", "화장품", "건강기능식품", "건기식"
 ]
 
 ROCHE_DISEASE_AREAS = [
@@ -207,7 +207,7 @@ ROCHE_DISEASE_AREAS = [
 ]
 
 UNRELATED_DISEASE_AREAS = [
-    "아토피", "건선", "당뇨", "고혈압", "치매", "알츠하이머", "탈모", "통풍", "골다공증", "성조숙증", "비만"
+    "아토피", "건선", "당뇨", "고혈압", "치매", "알츠하이머", "탈모", "통풍", "골다공증", "성조숙증", "비만",
 ]
 
 # 카테고리 매칭 함수
@@ -253,9 +253,9 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
-    # 일반 상식/생활 건강 정보 강력 감점 (-4점)
+    # 일반 상식/생활 건강 정보 강력 감점 (-5점)
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단"]):
-        score -= 4
+        score -= 5
 
     if category == "Corporate News":
         score += 4
@@ -295,14 +295,14 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
-        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 3
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 4
 
     # ★ 2) 유방암 세부 필터링 (HER2/HR양성 가점, 삼중음성 감점) 복원 ★
     if re.search(r"유방암", full_text, re.I):
         if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
         if re.search(r"HR\+|HR양성|호르몬\s*양성|호르몬\s*수용체", full_text, re.I):
             if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
-        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 3
+        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 4
 
     # Tier 1 매체 (주요일간지/주요전문지) 가점 (+1점)
     if tier == "1 Tier": score += 1
