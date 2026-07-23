@@ -94,7 +94,7 @@ ALL_MEDIA_LIST = [
     # =========================================================
     # 2. 제약 / 바이오 / 의료 / 헬스 전문지 (Pharma Specialty)
     # =========================================================
-    # [★ Tier 1 매체 확장] 주요 핵심 전문지 및 주요 헬스 매체
+    # [Tier 1] 주요 핵심 전문지 및 주요 헬스 매체
     {"media": "청년의사", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.docdocdoc.co.kr/rss/allArticle.xml"},
     {"media": "데일리팜", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailypharm.com/Users/Rss/Rss.html"},
     {"media": "의학신문", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.bosa.co.kr/rss/allArticle.xml"},
@@ -107,7 +107,6 @@ ALL_MEDIA_LIST = [
     {"media": "코리아헬스로그", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.koreahealthlog.com/rss/allArticle.xml"},
     {"media": "데일리메디", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailymedi.com/rss/allArticle.xml"},
     
-    # ★ 요청으로 Tier 1 승격 매체 (7개) ★
     {"media": "메디파나뉴스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.medipana.com/rss/allArticle.xml"},
     {"media": "메디칼업저버", "type": "Specialty", "tier": "1 Tier", "rss": "http://www.monews.co.kr/rss/allArticle.xml"},
     {"media": "헬스동아", "type": "Specialty", "tier": "1 Tier", "rss": "https://donga.com/news/rss/health"},
@@ -192,10 +191,10 @@ DISEASE_KEYWORDS = [
 ]
 
 INDUSTRY_SINGLE_KEYWORDS = [
-    "약평위", "암질심", "중증질환심의위원회", "심평원","건보공단", "복지부", "식약처", "공정위", "보건복지위", "국정감사", "국감",
+    "약평위", "암질심", "중증질환심의위원회", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위", "국정감사", "국감",
     "KRPIA", "한국글로벌의약산업협회", "KOBIA", "한국바이오의약품협회", "한국제약바이오협회",
     "약가협상", "약가인하", "약가제도", "경평면제", "위험분담제", "RSA", "경제성평가", "급여재평가",
-    "고가의약품", "초고가신약", "사전심의", "사용량-약가연동", "RWD", "RWE", "희귀난치성질환", "희귀난치질환", "희귀질환"
+    "고가의약품", "초고가신약", "사전심의", "사용량-약가연동", "RWD", "RWE", "희귀난치성질환", "희귀난치질환", "희귀질환",
     "혁신신약", "혁신형제약기업", "정밀의료", "정밀의학", "맞춤의학", "디지털헬스케어", 
     "디지털바이오마커", "보건의료데이터", "신의료기술", "건보재정", "건강보험정책", "분산형임상", "DCT"
 ]
@@ -271,7 +270,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 
     elif category == "Disease/ Market News":
         score += 3
-        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"):
+        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"]):
             score += 2
         if any(dis in full_text for dis in ["비소세포폐암", "폐암", "유방암", "SMA", "황반변성", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
@@ -351,7 +350,7 @@ def parse_single_media(m, time_limit):
                     "기사링크": link,
                     "게재일": pub_date_str
                 })
-    except:
+    except Exception:
         pass
     return sub_results
 
@@ -381,7 +380,7 @@ def save_selected_history(selected_df):
             save_data.to_csv(HISTORY_FILE, mode='a', header=False, index=False, encoding='utf-8-sig')
         else:
             save_data.to_csv(HISTORY_FILE, mode='w', header=True, index=False, encoding='utf-8-sig')
-    except:
+    except Exception:
         pass
 
 # 세션 초기화
@@ -406,7 +405,7 @@ if os.path.exists(HISTORY_FILE):
     try:
         history_df = pd.read_csv(HISTORY_FILE)
         history_count = len(history_df)
-    except:
+    except Exception:
         pass
 
 st.write(f"⚡ 초고속 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습용 데이터 축적: **{history_count}건**")
