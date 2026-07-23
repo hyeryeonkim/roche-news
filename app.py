@@ -66,16 +66,36 @@ with tab1:
         st.info("현재 수집된 기사가 없습니다.")
 
 with tab2:
-    st.subheader("뉴스레터 자동 생성")
-    if st.button("🚀 전문지 뉴스레터 생성하기"):
+    st.subheader("📰 중복 제거 및 뉴스레터 양식 생성")
+    if st.button("🚀 최종 뉴스레터 텍스트 생성하기"):
         if not df.empty:
+            # 제목 기준 중복 제거
             dedup = df.drop_duplicates(subset=["기사제목"], keep="first")
-            output_text = f"**[한국로슈 전문지 Daily Monitoring - {datetime.now().strftime('%Y-%m-%d')}]**\n\n"
+            st.success(f"원문 {len(df)}건 중 중복 제거 후 최종 {len(dedup)}건이 정리되었습니다!")
+            st.divider()
+            
+            # 오늘 날짜
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            output_text = f"**[한국로슈 Daily News Monitoring - {today_str}]**\n\n"
+            
+            # 카테고리 순서대로 출력
             for cat in KEYWORDS.keys():
                 cat_df = dedup[dedup["카테고리"] == cat]
                 if not cat_df.empty:
-                    output_text += f"### ■ {cat}\n"
+                    output_text += f"### {cat}\n"
                     for _, r in cat_df.iterrows():
-                        output_text += f"* **[{r['매체명']}]** [{r['기사제목']}]({r['기사링크']}) ({r['검색키워드']})\n"
+                        # 요청하신 형태: * [기사제목](링크) (매체명 · MM/DD)
+                        # 현재 날짜(MM/DD) 양식 포맷팅
+                        date_str = datetime.now().strftime('%m/%d')
+                        
+                        output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} · {date_str})\n"
                     output_text += "\n"
+            
+            # 화면에 출력
+            st.markdown(output_text)
+            
+            # 텍스트 복사 및 다운로드 버튼
+            st.download_button("📋 텍스트 파일로 다운로드", output_text, f"로슈_뉴스레터_{datetime.now().strftime('%Y%m%d')}.txt")
+        else:
+            st.warning("수집된 데이터가 없습니다.")
             st.markdown(output_text)
