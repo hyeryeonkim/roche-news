@@ -370,7 +370,7 @@ def parse_single_media(m, time_limit):
         pass
     return sub_results
 
-# 🎯 3. 유사도 기반 중복 기사 군집화 및 대표 1건 선정 함수
+# 🎯 3. 유사도 기반 중복 기사 군집화 및 대표 1건 선정 함수 (오류 수정 완료)
 def cluster_and_mark_representatives(df, threshold=0.70):
     if df.empty:
         df["is_representative"] = False
@@ -411,7 +411,8 @@ def cluster_and_mark_representatives(df, threshold=0.70):
             ascending=[True, False, True]
         ).index[0]
         
-        df.iloc[best_idx, df.columns.get_loc("is_representative")] = True
+        # 🎯 [핵심 수정] loc 사용으로 IndexError 방지
+        df.loc[best_idx, "is_representative"] = True
         cluster_cnt += 1
         
     return df
