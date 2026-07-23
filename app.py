@@ -271,7 +271,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 
     elif category == "Disease/ Market News":
         score += 3
-        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰"," "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"):
+        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰", " "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"):
             score += 2
         if any(dis in full_text for dis in ["비소세포폐암", "폐암", "유방암", "SMA", "황반변성", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
