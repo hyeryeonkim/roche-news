@@ -8,7 +8,7 @@ from time import mktime
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
 st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
-# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체 풀 복원)
+# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체)
 ALL_MEDIA_LIST = [
     # [1 Tier] 주요 통신사 및 종합 일간지
     {"media": "연합뉴스", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
@@ -46,7 +46,12 @@ ALL_MEDIA_LIST = [
     {"media": "메디소비자뉴스", "tier": "2 Tier", "rss": "https://www.medisobizanews.com/rss/allArticle.xml"}
 ]
 
-# 2. Product 단독 키워드 리스트
+# 2. Corporate 전용 단독 키워드 리스트
+CORPORATE_KEYWORDS = [
+    "로슈", "Roche", "Genentech", "제넨텍", "제넨테크", "쥬가이", "Chugai", "한국로슈"
+]
+
+# 3. Product 단독 키워드 리스트
 PRODUCT_KEYWORDS = [
     "티쎈트릭", "Tecentriq", "아테졸리주맙", "atezolizumab", "맙테라", "Mabthera", "리툭시맙", "Rituximab", 
     "알레센자", "Alecensa", "알렉티닙", "alectinib", "셀셉트", "Cellcept", "미코페놀레이트모페틸", "마이코페놀레이트", "Mofetil", 
@@ -58,16 +63,17 @@ PRODUCT_KEYWORDS = [
     "글로피타맙", "컬럼비", "엘레비디스", "엘리비디스", "이나볼리십", "이토베비", "피아스카이", "크로발리맙", "트론티네맙"
 ]
 
-# 3. 제외 키워드
+# 4. 제외 키워드
 NEGATIVE_KEYWORDS = ["집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가"]
 
-# 4. 정교 조합 검색 매칭 함수
+# 5. 정교 규칙 매칭 함수
 def classify_article_by_rules(text):
-    # 1) Corporate News 매칭 (순수 로슈 자사 전용)
-    if re.search(r"한국로슈|로슈그룹|로슈진단", text, re.I):
-        return "Corporate News", "한국로슈/기업 전용"
+    # 1) Corporate News (로슈/기업 전용 단독 키워드 최우선 분류)
+    for ck in CORPORATE_KEYWORDS:
+        if re.search(re.escape(ck), text, re.I):
+            return "Corporate News", ck
 
-    # 2) Product News 매칭 (단독 제품명)
+    # 2) Product News 매칭
     for p in PRODUCT_KEYWORDS:
         if re.search(re.escape(p), text, re.I):
             return "Product News", p
@@ -83,8 +89,6 @@ def classify_article_by_rules(text):
         return "Disease/ Market News", "경합/타사 제품"
 
     # 4) Industry / Policy News 불리언 조합 매칭
-    if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌", text):
-        return "Industry/ Policy News", "(로슈*기업동향/CSR)"
     if re.search(r"다국적|글로벌|외자사", text, re.I) and re.search(r"제약사|제약업계|제약기업|제약업체", text) and re.search(r"인사|동정|수상|CSR|사회공헌|인수|합병|리베이트", text):
         return "Industry/ Policy News", "(글로벌제약사*동향/CSR/인사)"
     if re.search(r"임상시험|R&D|연구개발|특허", text, re.I) and re.search(r"의약품|약품|치료제|신약", text):
@@ -102,17 +106,29 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 5. 연관도 점수 자동 산정
+# 6. 연관도 점수 세부 산정 (폐암 변이 가감점 반영)
 def calculate_relevance_score(title, summary, category):
     full_text = f"{title} {summary}"
     score = 4
     if category == "Corporate News": score += 5
     elif category == "Product News": score += 4
+    
     if any(k in full_text for k in ["로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디"]): score += 2
     if any(p in full_text for p in ["약가", "암질심", "위험분담제", "급여", "심평원", "식약처"]): score += 1
-    return min(score, 10)
 
-# 6. 뉴스 수집 로직
+    # 폐암 기사 관련 변이 가감점 로직
+    if re.search(r"폐암|비소세포폐암", full_text, re.I):
+        # ALK, KRAS 변이 가점 (+2점)
+        if re.search(r"ALK|KRAS", full_text, re.I):
+            score += 2
+        # ROS, EGFR 변이 감점 (-2점)
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I):
+            score -= 2
+
+    # 점수 범위 제한 (1점 ~ 10점)
+    return max(1, min(score, 10))
+
+# 7. 뉴스 수집 로직
 @st.cache_data(ttl=300)
 def fetch_recent_news():
     results = []
@@ -167,7 +183,7 @@ def fetch_recent_news():
 
 raw_df = fetch_recent_news()
 
-# 7. UI 화면 구성
+# 8. UI 화면 구성
 st.write(f"⏰ 실시간 수집된 주요 뉴스: **{len(raw_df)}건**")
 
 if not raw_df.empty:
