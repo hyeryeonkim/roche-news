@@ -253,6 +253,10 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
 
+    # ★ [오탐 제거 1] 컬럼비아 대학교 관련 연구 기사 강력 감점 (-8점) ★
+    if re.search(r"컬럼비아\s*대|컬럼비아대|컬럼비아\s*대학교|columbia\s*univ", full_text, re.I):
+        score -= 8
+
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단"]):
         score -= 4
 
@@ -266,9 +270,26 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 
     elif category == "Disease/ Market News":
         score += 3
-        if any(comp in full_text for comp in ["키트루다", "옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"]):
+        
+        # ★ [정교화 1] 키트루다는 로슈 주요 질환군과 묶였을 때만 가점 (+3점) ★
+        if "키트루다" in full_text:
+            if any(roche_dis in full_text for roche_dis in ["폐암", "비소세포폐암", "유방암", "간암", "혈액암", "DLBCL", "TNBC"]):
+                score += 3
+
+        # ★ [정교화 2] 혈액암은 DLBCL 또는 소포성림프종과 묶였을 때만 가점 (+3점) ★
+        if "혈액암" in full_text:
+            if any(ly in full_text for ly in ["DLBCL", "소포성림프종", "소포성 림프종", "미세거대B세포림프종"]):
+                score += 3
+
+        # ★ [정교화 3] 유방암은 HER2+, HER2 양성과 묶였을 때만 가점 (+3점) ★
+        if "유방암" in full_text:
+            if re.search(r"HER2|HER2양성|HER2\+|HER2\s*양성", full_text, re.I):
+                score += 3
+
+        if any(comp in full_text for comp in ["옵디보", "임핀지", "이뮤도", "알룬브릭", "로비큐아", "엡킨리", "앱킨리", "예스카타", "CAR-T", "비오뷰", "엔허투", "아일리아", "루센티스", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "마벤클라드", "피크레이", "티루캡"]):
             score += 2
-        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "유방암", "SMA", "황반변성", "간암", "NMOSD"]):
+
+        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "SMA", "황반변성", "간암", "NMOSD"]):
             if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
                 score += 1
 
@@ -293,12 +314,6 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
-
-    if re.search(r"유방암", full_text, re.I):
-        if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
-        if re.search(r"HR\+|HR양성|호르몬\s*양성|호르몬\s*수용체", full_text, re.I):
-            if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
-        if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 2
 
     if tier == "1 Tier": score += 1
     return max(1, min(score, 10))
@@ -500,7 +515,6 @@ with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클
         st.write(f"현재 총 **{len(history_df)}건**의 선택 데이터가 누적 저장되어 있습니다.")
         st.caption("💡 지우고 싶은 기사의 '삭제 선택 ✅' 칸에 체크한 뒤, 아래 [🗑️ 선택한 항목만 삭제] 버튼을 누르세요.")
         
-        # 1. 삭제 선택 열 추가
         history_df_edit = history_df.copy()
         history_df_edit.insert(0, "삭제 선택", False)
         
@@ -519,7 +533,6 @@ with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클
         col_del1, col_del2, col_del3 = st.columns([1, 1, 1])
         
         with col_del1:
-            # 2. 선택 개별 삭제 버튼
             if st.button("🗑️ 선택한 항목만 삭제", type="primary"):
                 to_keep = edited_history[edited_history["삭제 선택"] == False].drop(columns=["삭제 선택"])
                 if len(to_keep) < len(history_df):
@@ -530,7 +543,6 @@ with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클
                     st.warning("삭제할 항목이 선택되지 않았습니다.")
 
         with col_del2:
-            # 3. CSV 다운로드 버튼
             csv_data = history_df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label="💾 누적 데이터 CSV 다운로드",
@@ -540,7 +552,6 @@ with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클
             )
             
         with col_del3:
-            # 4. 전체 초기화 버튼
             if st.button("🔥 학습 데이터 전체 초기화"):
                 os.remove(HISTORY_FILE)
                 st.success("모든 히스토리 데이터가 초기화되었습니다!")
