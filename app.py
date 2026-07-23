@@ -246,21 +246,16 @@ def classify_article_by_rules(text):
 
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
-    
-    # 🎯 0점에서 출발하여 변별력 있게 평가
     score = 0
 
-    # 1. 강력 감점 요인 (오탐 제거)
     if re.search(r"컬럼비아\s*대|컬럼비아대|컬럼비아\s*대학교|columbia\s*univ", full_text, re.I):
         score -= 8
 
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단"]):
         score -= 4
 
-    # 2. 카테고리 기본 매칭 점수 (+1점)
     score += 1
 
-    # 3. 카테고리별 세부 가점 로직
     if category == "Corporate News":
         if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]):
             score += 3
@@ -282,13 +277,11 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         has_target = any(re.search(tc, full_text, re.I) for tc in target_conditions)
         has_event = any(ev in full_text for ev in major_events)
 
-        # [🎯 Track 1: 경쟁사 X 로슈 세부 적응증 X 주요 이슈 결합 (+4점)]
         if has_comp and has_target and has_event:
             score += 4
         elif has_comp and (has_target or has_event):
             score += 2
 
-        # [🎯 Track 2: KOL 연구결과 & 보건 통계/가이드라인 레퍼런스 (+3점)]
         is_kol_research = re.search(r"(교수|연구팀|임상\s*발표|국제학회|게재|학술지|연구결과|발표회)", full_text)
         is_gov_stats = re.search(r"(질병청|질병관리청|통계|발병률\s*1위|주의보|가이드라인|치료지침|지침\s*개정)", full_text)
 
@@ -305,11 +298,9 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if any(org in full_text for org in ["식약처", "심평원", "건보공단", "복지부"]):
             score += 1
 
-    # 4. 제목 포함 가점 (+1점)
     if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "이토베비", "키트루다", "타그리소", "렉라자", "약가", "급여", "국감"]):
         score += 1
 
-    # 5. 폐암 세부 타깃 보정
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I):
@@ -317,7 +308,6 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I):
             score -= 1
 
-    # 6. 매체 Tier 가점 (+1점)
     if tier == "1 Tier":
         score += 1
 
@@ -370,18 +360,26 @@ def parse_single_media(m, time_limit):
         pass
     return sub_results
 
-# 🎯 3. 유사도 기반 중복 기사 군집화 및 대표 1건 선정 함수 (오류 수정 완료)
-def cluster_and_mark_representatives(df, threshold=0.70):
+def extract_keywords_set(text):
+    """기사 제목에서 대괄호/특수문자 제거 후 2글자 이상 핵심 단어 집합 반환"""
+    cleaned = re.sub(r"\[.*?\]|\(.*?\)|\<.*?\>", "", text)
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    words = [w.lower() for w in cleaned.split() if len(w) >= 2]
+    return set(words), cleaned.strip().lower()
+
+# 🎯 고도화된 유사도 기반 중복 기사 군집화 및 대표 1건 선정 함수
+def cluster_and_mark_representatives(df, threshold=0.55):
     if df.empty:
         df["is_representative"] = False
         df["cluster_id"] = -1
         return df
     
-    df = df.copy()
+    # 🎯 [핵심] 인덱스 재정렬 (인덱스 불일치 오류 완벽 처리)
+    df = df.reset_index(drop=True)
     df["is_representative"] = False
     df["cluster_id"] = -1
     
-    clean_titles = [re.sub(r"[^\w\s]", "", str(t)).strip().lower() for t in df["기사제목"]]
+    title_meta = [extract_keywords_set(str(t)) for t in df["기사제목"]]
     
     cluster_cnt = 0
     assigned = [False] * len(df)
@@ -392,26 +390,37 @@ def cluster_and_mark_representatives(df, threshold=0.70):
         
         cluster_indices = [i]
         assigned[i] = True
+        set_i, str_i = title_meta[i]
         
         for j in range(i + 1, len(df)):
             if assigned[j]:
                 continue
-            sim = SequenceMatcher(None, clean_titles[i], clean_titles[j]).ratio()
-            if sim >= threshold:
+            
+            set_j, str_j = title_meta[j]
+            
+            # 1. 단어 집합 자카드 유사도 (Jaccard Similarity)
+            intersection = len(set_i.intersection(set_j))
+            union = len(set_i.union(set_j))
+            jaccard_sim = intersection / union if union > 0 else 0
+            
+            # 2. 문자열 유사도 (SequenceMatcher)
+            seq_sim = SequenceMatcher(None, str_i, str_j).ratio()
+            
+            # 단어 집합 유사도 50% 이상 or 문자열 유사도 threshold 이상 시 중복으로 인정
+            if jaccard_sim >= 0.50 or seq_sim >= threshold:
                 cluster_indices.append(j)
                 assigned[j] = True
         
-        df.iloc[cluster_indices, df.columns.get_loc("cluster_id")] = cluster_cnt
+        df.loc[cluster_indices, "cluster_id"] = cluster_cnt
         
-        # 대표 1건 차출: 1 Tier 매체 우선 -> 연관도 높은 순 -> 게재 시각이 빠른 순
-        sub_df = df.iloc[cluster_indices].copy()
+        # 대표 1건 차출 (1 Tier 매체 우선 -> 연관도 높은 순 -> 빠른 게재일)
+        sub_df = df.loc[cluster_indices].copy()
         sub_df["tier_score"] = sub_df["Tier"].apply(lambda x: 1 if x == "1 Tier" else 2)
         best_idx = sub_df.sort_values(
             by=["tier_score", "연관도점수", "pub_dt"],
             ascending=[True, False, True]
         ).index[0]
         
-        # 🎯 [핵심 수정] loc 사용으로 IndexError 방지
         df.loc[best_idx, "is_representative"] = True
         cluster_cnt += 1
         
@@ -485,7 +494,6 @@ if not raw_df.empty:
         auto_df = raw_df.copy()
         auto_df["선택"] = False
         
-        # 🎯 중복 도배 방지: 대표 기사(is_representative=True)만 대상으로 상위 5건 체크
         if "is_representative" in auto_df.columns:
             for cat in CATEGORIES_LIST:
                 cat_rep_indices = auto_df[
