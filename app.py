@@ -301,7 +301,7 @@ if not raw_df.empty:
 
     st.divider()
 
-    # ★ 완벽하게 깔끔한 [Roche] 마크다운 이메일 양식 복원 엔진 ★
+    # ★ 완벽한 Roche 이메일 HTML 포맷 생성 엔진 ★
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
@@ -314,36 +314,82 @@ if not raw_df.empty:
                 title_date_str = now.strftime('%b %d')        # Jul 23
                 header_date_str = now.strftime('%d %B, %Y')   # 23 July, 2026
                 
-                # 1. 텍스트 메일 템플릿 작성
-                output_text = f"Roche\nDaily\nNews Highlights\n\t\t\t\t\t\t\t\t{header_date_str}\n\n"
-                output_text += f"NEWS\n\n"
+                # HTML 이메일 바디 빌드 (원문 PDF 양식과 100% 동일한 디자인/컬러)
+                html_code = f"""
+                <div id="roche-newsletter" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 680px; color: #333333; line-height: 1.5; border: 1px solid #e2e8f0; padding: 25px; border-radius: 8px; background-color: #ffffff;">
+                    
+                    <!-- 헤더 타이틀 / 날짜 -->
+                    <div style="border-bottom: 2px solid #0066CC; padding-bottom: 12px; margin-bottom: 20px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="font-size: 24px; font-weight: bold; color: #0066CC;">Roche Daily News Highlights</td>
+                                <td style="text-align: right; font-size: 14px; color: #666666; vertical-align: bottom;">{header_date_str}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- NEWS 섹션 타이틀 -->
+                    <div style="font-size: 20px; font-weight: bold; color: #222222; margin-bottom: 18px; letter-spacing: 0.5px;">NEWS</div>
+                """
                 
                 for cat in categories:
-                    output_text += f"{cat}\n"
                     cat_df = selected_df[selected_df["카테고리"] == cat]
-                    
+                    html_code += f"""
+                    <div style="margin-bottom: 22px;">
+                        <div style="font-size: 15px; font-weight: bold; color: #0066CC; margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">{cat}</div>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 14px; color: #333333;">
+                    """
                     if not cat_df.empty:
                         for _, r in cat_df.iterrows():
-                            # 원문 양식 규격: * 제목 (매체명 MM/DD)
-                            output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} {r['게재일']})\n"
+                            html_code += f"""
+                            <li style="margin-bottom: 6px;">
+                                <a href="{r['기사링크']}" target="_blank" style="color: #1a0dab; text-decoration: underline; font-weight: 500;">{r['기사제목']}</a> 
+                                <span style="color: #666666; font-size: 13px;">({r['매체명']} {r['게재일']})</span>
+                            </li>
+                            """
                     else:
-                        output_text += "* (관련 주요 기사 없음)\n"
-                    output_text += "\n"
-                
-                output_text += f"[한국로슈 Communications & Public Affairs Chapter]\n"
-                output_text += f"이미규 | migyu.lee@roche.com\n"
-                output_text += f"김혜련 | hyeryeon.kim@roche.com\n"
-                output_text += f"박수윤 | sue.park@roche.com\n\n"
-                output_text += f"© {now.year} Roche Korea Co.,Ltd"
+                        html_code += f"""<li style="color: #888888; list-style-type: none; margin-left: -18px;">(관련 주요 기사 없음)</li>"""
+                    
+                    html_code += "</ul></div>"
 
-                st.success("🎉 뉴스레터 생성이 완료되었습니다!")
-                st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
+                # 서명 및 카피라이트 푸터
+                html_code += f"""
+                    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #666666; line-height: 1.6;">
+                        <p style="font-weight: bold; color: #333333; margin: 0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p>
+                        <p style="margin: 0;">이미규 | migyu.lee@roche.com</p>
+                        <p style="margin: 0;">김혜련 | hyeryeon.kim@roche.com</p>
+                        <p style="margin: 0 0 10px 0;">박수윤 | sue.park@roche.com</p>
+                        <p style="color: #999999; margin: 0;">© {now.year} Roche Korea Co.,Ltd</p>
+                    </div>
+                </div>
+                """
+
+                # UI 렌더링 영역
+                st.markdown("### 📧 완성된 이메일 뉴스레터 미리보기")
+                st.components.v1.html(html_code, height=650, scrolling=True)
+
+                # 클립보드 원클릭 복사 스크립트 기능
+                copy_script = f"""
+                <script>
+                function copyHtmlToClipboard() {{
+                    const container = parent.document.getElementById("roche-newsletter");
+                    if (container) {{
+                        const range = parent.document.createRange();
+                        range.selectNode(container);
+                        parent.window.getSelection().removeAllRanges();
+                        parent.window.getSelection().addRange(range);
+                        parent.document.execCommand("copy");
+                        parent.window.getSelection().removeAllRanges();
+                        alert("✅ 로슈 메일 양식 그대로 복사되었습니다! 아웃룩 메일 작성창에 Ctrl+V 하시면 됩니다.");
+                    }}
+                }}
+                </script>
+                <button onclick="copyHtmlToClipboard()" style="background-color: #0066CC; color: white; border: none; padding: 12px 24px; font-size: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
+                    📋 양식 원본 그대로 복사하기 (클릭 후 메일에 Ctrl+V)
+                </button>
+                """
+                st.components.v1.html(copy_script, height=60)
                 
-                # 원클릭 마우스 드래그용 깔끔한 텍스트 상자
-                st.markdown("### 📋 복사 전용 뉴스레터 (아래 내용 전체를 드래그해서 메일에 붙여넣으세요)")
-                st.code(output_text, language="markdown")
-                
-                st.download_button("💾 텍스트 파일로 다운로드", output_text, f"Roche_News_{now.strftime('%Y%m%d')}.txt")
             else:
                 st.warning("선택된 기사가 없습니다.")
 else:
