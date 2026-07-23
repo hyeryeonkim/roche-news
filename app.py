@@ -77,7 +77,7 @@ DISEASE_KEYWORDS = [
     "업리즈나", "이네빌리주맙", "티루캡", "피크레이", "조기암", "조기유방암"
 ]
 
-# 5. Industry / Policy 뉴스 고유 단독 키워드 리스트 (핵심 추가 반영 완료)
+# 5. Industry / Policy 뉴스 고유 단독 키워드 리스트
 INDUSTRY_SINGLE_KEYWORDS = [
     "약평위", "암질심", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위",
     "KRPIA", "한국글로벌의약산업협회", "KOBIA", "한국바이오의약품협회", "한국제약바이오협회",
@@ -94,7 +94,7 @@ NEGATIVE_KEYWORDS = [
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
-# 7. 정교 규칙 매칭 함수 (카테고리 분류 핵심 로직)
+# 7. 정교 규칙 매칭 함수
 def classify_article_by_rules(text):
     # 1) Corporate News (로슈/기업 동향, CSR, 단독 키워드 최우선 분류)
     if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
@@ -109,7 +109,7 @@ def classify_article_by_rules(text):
         if re.search(re.escape(p), text, re.I):
             return "Product News", p
 
-    # 3) Disease / Market News 매칭 (단독 키워드 + 불리언 조합)
+    # 3) Disease / Market News 매칭
     for dk in DISEASE_KEYWORDS:
         if re.search(re.escape(dk), text, re.I):
             return "Disease/ Market News", dk
@@ -119,7 +119,7 @@ def classify_article_by_rules(text):
     if re.search(r"독감|인플루엔자", text) and re.search(r"항바이러스제|치료제|치료|질병관리청|국가감염병|통계|조사", text):
         return "Disease/ Market News", "(독감*치료제/감염병)"
 
-    # 4) Industry / Policy News 매칭 (고유 단독 키워드 + 필수 조합)
+    # 4) Industry / Policy News 매칭
     for ik in INDUSTRY_SINGLE_KEYWORDS:
         if re.search(re.escape(ik), text, re.I):
             return "Industry/ Policy News", ik
@@ -137,22 +137,58 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 8. 연관도 점수 세부 산정 (폐암 변이 가감점 반영)
-def calculate_relevance_score(title, summary, category):
+# 8. 연관도 점수 세부 산정 (Disease/Market 카테고리 경쟁사 우대 로직 수정)
+def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
-    score = 4
-    if category == "Corporate News": score += 5
-    elif category == "Product News": score += 4
-    
-    if any(k in full_text for k in ["로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디"]): score += 2
-    if any(p in full_text for p in ["약가", "암질심", "위험분담제", "급여", "심평원", "식약처", "약평위"]): score += 1
+    score = 3
 
-    # 폐암 기사 관련 변이 가감점 로직
+    if category == "Corporate News":
+        score += 4
+        if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]):
+            score += 2
+
+    elif category == "Product News":
+        score += 3
+        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디"]):
+            score += 2
+
+    elif category == "Disease/ Market News":
+        score += 3
+        # 경쟁사 주요 약제 동향은 Market News의 핵심이므로 가점!
+        if any(comp in full_text for comp in [
+            "키트루다", "옵디보", "타그리소", "렉라자", "엔허투", "아일리아", "루센티스", 
+            "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "엠겔티", "림카토"
+        ]):
+            score += 2
+            
+        if any(dis in full_text for dis in ["비소세포폐암", "폐암", "SMA", "황반변성", "유방암", "간암", "NMOSD"]):
+            if any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "적응증", "약평위", "암질심"]):
+                score += 1
+
+    elif category == "Industry/ Policy News":
+        score += 2
+        if any(p in full_text for p in ["약가인하", "약가협상", "암질심", "약평위", "위험분담제", "RSA", "급여재평가", "RWD", "RWE"]):
+            score += 2
+
+    # 제목(Title) 가중치 (카테고리 불문)
+    if any(k in title for k in [
+        "로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자",
+        "키트루다", "타그리소", "렉라자", "엔허투", "아일리아", "스핀라자",
+        "약가", "암질심", "약평위", "위험분담제", "급여", "심평원", "식약처"
+    ]):
+        score += 2
+
+    # 폐암 변이 기사 가감점
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
-            score += 2
+            if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I):
+                score += 2
         if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I):
             score -= 2
+
+    # 1 Tier 매체 우대
+    if tier == "1 Tier":
+        score += 1
 
     return max(1, min(score, 10))
 
@@ -172,11 +208,9 @@ def fetch_recent_news():
                 summary = entry.get("summary", entry.get("description", ""))
                 full_text = f"{title} {summary}"
                 
-                # 제외 키워드 감지 시 제외
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
                     continue
                 
-                # 게재 시간 감지 (36시간 이내)
                 pub_dt = None
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
@@ -191,7 +225,7 @@ def fetch_recent_news():
                 matched_cat, matched_kw = classify_article_by_rules(full_text)
                 
                 if matched_cat:
-                    rel_score = calculate_relevance_score(title, summary, matched_cat)
+                    rel_score = calculate_relevance_score(title, summary, matched_cat, tier=m["tier"])
                     results.append({
                         "선택": False,
                         "연관도점수": rel_score,
