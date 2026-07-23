@@ -7,44 +7,154 @@ from time import mktime
 from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard (통합 매체 엔진)")
 
-# 1. 수집 매체 리스트 (28개 전체 매체)
+# 1. 수집 매체 전체 통합 리스트 (일간/경제지 + 의약전문지 전수 포함)
 ALL_MEDIA_LIST = [
-    # [1 Tier] 주요 통신사 및 종합 일간지
-    {"media": "연합뉴스", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
-    {"media": "조선일보", "tier": "1 Tier", "rss": "https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml"},
-    {"media": "중앙일보", "tier": "1 Tier", "rss": "https://rss.joongang.co.kr/son/joongang_all.xml"},
-    {"media": "동아일보", "tier": "1 Tier", "rss": "https://rss.donga.com/total.xml"},
-    {"media": "한겨레", "tier": "1 Tier", "rss": "https://www.hani.co.kr/rss/"},
-    {"media": "경향신문", "tier": "1 Tier", "rss": "https://www.khan.co.kr/rss/rssdata/total_news.xml"},
-    {"media": "한국일보", "tier": "1 Tier", "rss": "https://hankookilbo.com/baidu/rss/all"},
-    {"media": "국민일보", "tier": "1 Tier", "rss": "https://rss.kmib.co.kr/data/kmibRssAll.xml"},
-    
-    # [1 Tier] 주요 경제지 및 방송사
-    {"media": "매일경제", "tier": "1 Tier", "rss": "https://www.mk.co.kr/rss/30000001/"},
-    {"media": "한국경제", "tier": "1 Tier", "rss": "https://www.hankyung.com/feed/all-news"},
-    {"media": "서울경제", "tier": "1 Tier", "rss": "https://www.sedaily.co.kr/RSS/NewsAll"},
-    {"media": "아시아경제", "tier": "1 Tier", "rss": "https://www.asiae.co.kr/rss/all.xml"},
-    {"media": "파이낸셜뉴스", "tier": "1 Tier", "rss": "https://www.fnnews.com/rss/fn_realtime_all.xml"},
-    {"media": "이데일리", "tier": "1 Tier", "rss": "https://rss.edaily.co.kr/e-health_news.xml"},
-    {"media": "YTN", "tier": "1 Tier", "rss": "https://www.ytn.co.kr/_comm/get_rss_news.php?code=0103"},
+    # =========================================================
+    # 1. 종합일간지 / 경제지 / 통신사 (General / Economy)
+    # =========================================================
+    # [Tier 1] 주요 메이저 일간지 / 경제지 / 3대 통신사
+    {"media": "연합뉴스", "type": "General", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
+    {"media": "뉴시스", "type": "General", "tier": "1 Tier", "rss": "https://www.newsis.com/RSS/sitemap.xml"},
+    {"media": "뉴스1", "type": "General", "tier": "1 Tier", "rss": "https://www.news1.kr/rss/all.xml"},
+    {"media": "조선일보", "type": "General", "tier": "1 Tier", "rss": "https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml"},
+    {"media": "중앙일보", "type": "General", "tier": "1 Tier", "rss": "https://rss.joongang.co.kr/son/joongang_all.xml"},
+    {"media": "동아일보", "type": "General", "tier": "1 Tier", "rss": "https://rss.donga.com/total.xml"},
+    {"media": "매일경제", "type": "General", "tier": "1 Tier", "rss": "https://www.mk.co.kr/rss/30000001/"},
+    {"media": "한국경제", "type": "General", "tier": "1 Tier", "rss": "https://www.hankyung.com/feed/all-news"},
 
-    # [2 Tier] 제약 / 바이오 / 의료 전문지
-    {"media": "청년의사", "tier": "2 Tier", "rss": "https://www.docdocdoc.co.kr/rss/allArticle.xml"},
-    {"media": "데일리팜", "tier": "2 Tier", "rss": "https://www.dailypharm.com/Users/Rss/Rss.html"},
-    {"media": "약업신문", "tier": "2 Tier", "rss": "https://www.yakup.com/rss/"},
-    {"media": "메디칼타임즈", "tier": "2 Tier", "rss": "https://www.medicaltimes.com/Users/Rss/Rss.html"},
-    {"media": "의학신문", "tier": "2 Tier", "rss": "https://www.bosa.co.kr/rss/allArticle.xml"},
-    {"media": "라포르시안", "tier": "2 Tier", "rss": "https://www.rapportian.com/rss/allArticle.xml"},
-    {"media": "메디파나뉴스", "tier": "2 Tier", "rss": "https://www.medipana.com/rss/allArticle.xml"},
-    {"media": "의약뉴스", "tier": "2 Tier", "rss": "https://www.newsmp.com/rss/allArticle.xml"},
-    {"media": "히트뉴스", "tier": "2 Tier", "rss": "https://www.hitnews.co.kr/rss/allArticle.xml"},
-    {"media": "뉴스더보이스", "tier": "2 Tier", "rss": "https://www.newsthevoice.com/rss/allArticle.xml"},
-    {"media": "바이오스펙테이터", "tier": "2 Tier", "rss": "https://www.biospectator.com/rss/allArticle.xml"},
-    {"media": "헬스코리아뉴스", "tier": "2 Tier", "rss": "https://www.hkn24.com/rss/allArticle.xml"},
-    {"media": "팜뉴스", "tier": "2 Tier", "rss": "https://www.pharmnews.com/rss/allArticle.xml"},
-    {"media": "메디소비자뉴스", "tier": "2 Tier", "rss": "https://www.medisobizanews.com/rss/allArticle.xml"}
+    # [Tier 2] 기타 일간지 / 경제지 / 방송 / IT
+    {"media": "조선비즈", "type": "General", "tier": "2 Tier", "rss": "https://biz.chosun.com/rss/all.xml"},
+    {"media": "IT조선", "type": "General", "tier": "2 Tier", "rss": "https://it.chosun.com/rss/all.xml"},
+    {"media": "코리아중앙데일리", "type": "General", "tier": "2 Tier", "rss": "https://koreajoongangdaily.joins.com/rss/all.xml"},
+    {"media": "동아닷컴", "type": "General", "tier": "2 Tier", "rss": "https://rss.donga.com/total.xml"},
+    {"media": "한국일보", "type": "General", "tier": "2 Tier", "rss": "https://hankookilbo.com/baidu/rss/all"},
+    {"media": "데일리한국", "type": "General", "tier": "2 Tier", "rss": "https://daily.hankooki.com/rss/allArticle.xml"},
+    {"media": "세계일보", "type": "General", "tier": "2 Tier", "rss": "https://www.segye.com/Articles/RSS/rss_all.xml"},
+    {"media": "문화일보", "type": "General", "tier": "2 Tier", "rss": "https://www.munhwa.com/news/rss.xml"},
+    {"media": "국민일보", "type": "General", "tier": "2 Tier", "rss": "https://rss.kmib.co.kr/data/kmibRssAll.xml"},
+    {"media": "쿠키뉴스", "type": "General", "tier": "2 Tier", "rss": "https://www.kukinews.com/rss/allArticle.xml"},
+    {"media": "한겨레", "type": "General", "tier": "2 Tier", "rss": "https://www.hani.co.kr/rss/"},
+    {"media": "서울신문", "type": "General", "tier": "2 Tier", "rss": "https://www.seoul.co.kr/rss/rssData/total_news.xml"},
+    {"media": "내일신문", "type": "General", "tier": "2 Tier", "rss": "http://www.naeil.com/news/rss/all.xml"},
+    {"media": "매일일보", "type": "General", "tier": "2 Tier", "rss": "https://www.m-i.kr/rss/allArticle.xml"},
+    {"media": "아시아투데이", "type": "General", "tier": "2 Tier", "rss": "https://www.asiatoday.co.kr/rss/all.xml"},
+    {"media": "MBN", "type": "General", "tier": "2 Tier", "rss": "https://www.mbn.co.kr/rss/all.xml"},
+    {"media": "한국경제TV", "type": "General", "tier": "2 Tier", "rss": "https://www.wowtv.co.kr/rss/all.xml"},
+    {"media": "파이낸셜뉴스", "type": "General", "tier": "2 Tier", "rss": "https://www.fnnews.com/rss/fn_realtime_all.xml"},
+    {"media": "서울경제", "type": "General", "tier": "2 Tier", "rss": "https://www.sedaily.co.kr/RSS/NewsAll"},
+    {"media": "서울경제TV", "type": "General", "tier": "2 Tier", "rss": "https://www.sentv.co.kr/rss/all.xml"},
+    {"media": "헤럴드경제", "type": "General", "tier": "2 Tier", "rss": "https://biz.heraldcorp.com/common/rss.php"},
+    {"media": "머니투데이", "type": "General", "tier": "2 Tier", "rss": "https://rss.mt.co.kr/mt_news_all.xml"},
+    {"media": "아시아경제", "type": "General", "tier": "2 Tier", "rss": "https://www.asiae.co.kr/rss/all.xml"},
+    {"media": "이데일리", "type": "General", "tier": "2 Tier", "rss": "https://rss.edaily.co.kr/e-health_news.xml"},
+    {"media": "이투데이", "type": "General", "tier": "2 Tier", "rss": "https://www.etoday.co.kr/rss/all.xml"},
+    {"media": "디지털타임스", "type": "General", "tier": "2 Tier", "rss": "https://www.dt.co.kr/rss/all.xml"},
+    {"media": "전자신문", "type": "General", "tier": "2 Tier", "rss": "https://www.etnews.com/etnews_rss.xml"},
+    {"media": "지디넷코리아", "type": "General", "tier": "2 Tier", "rss": "https://zdnet.co.kr/rss/all.xml"},
+    {"media": "더벨", "type": "General", "tier": "2 Tier", "rss": "https://www.thebell.co.kr/free/rss/rss.xml"},
+    {"media": "비즈월드", "type": "General", "tier": "2 Tier", "rss": "https://www.bizwnews.com/rss/allArticle.xml"},
+    {"media": "브릿지경제", "type": "General", "tier": "2 Tier", "rss": "https://www.viva100.com/rss/all.xml"},
+    {"media": "시사위크", "type": "General", "tier": "2 Tier", "rss": "https://www.sisaweek.com/rss/allArticle.xml"},
+    {"media": "세계비즈", "type": "General", "tier": "2 Tier", "rss": "https://www.segyebiz.com/rss/all.xml"},
+    {"media": "스포츠조선", "type": "General", "tier": "2 Tier", "rss": "https://sports.chosun.com/rss/all.xml"},
+    {"media": "스포츠비즈", "type": "General", "tier": "2 Tier", "rss": "https://www.sporbiz.co.kr/rss/allArticle.xml"},
+    {"media": "메트로서울", "type": "General", "tier": "2 Tier", "rss": "https://www.metroseoul.co.kr/rss/all.xml"},
+    {"media": "프라임경제", "type": "General", "tier": "2 Tier", "rss": "https://www.newsprime.co.kr/rss/allArticle.xml"},
+    {"media": "뉴스핌", "type": "General", "tier": "2 Tier", "rss": "https://www.newspim.com/rss/all.xml"},
+    {"media": "이코노믹데일리", "type": "General", "tier": "2 Tier", "rss": "https://www.economidaily.com/rss/all.xml"},
+    {"media": "이뉴스투데이", "type": "General", "tier": "2 Tier", "rss": "https://www.enewstoday.co.kr/rss/allArticle.xml"},
+    {"media": "뉴데일리", "type": "General", "tier": "2 Tier", "rss": "https://www.newdaily.co.kr/rss/all.xml"},
+    {"media": "뉴스투데이", "type": "General", "tier": "2 Tier", "rss": "https://www.news2day.co.kr/rss/allArticle.xml"},
+    {"media": "서울와이어", "type": "General", "tier": "2 Tier", "rss": "https://www.seoulwire.com/rss/allArticle.xml"},
+    {"media": "톱데일리", "type": "General", "tier": "2 Tier", "rss": "https://www.topdaily.kr/rss/allArticle.xml"},
+    {"media": "KPI뉴스", "type": "General", "tier": "2 Tier", "rss": "https://www.kpinews.kr/rss/allArticle.xml"},
+    {"media": "시사저널EBN", "type": "General", "tier": "2 Tier", "rss": "https://www.sisajournal-e.com/rss/allArticle.xml"},
+    {"media": "신아일보", "type": "General", "tier": "2 Tier", "rss": "https://www.shinailbo.co.kr/rss/allArticle.xml"},
+    {"media": "베타뉴스", "type": "General", "tier": "2 Tier", "rss": "https://www.betanews.net/rss/all.xml"},
+    {"media": "위키리크스", "type": "General", "tier": "2 Tier", "rss": "https://www.wikileaks-kr.org/rss/allArticle.xml"},
+    {"media": "한국팍스경제TV", "type": "General", "tier": "2 Tier", "rss": "https://www.paxetv.com/rss/allArticle.xml"},
+    {"media": "뉴스저널리즘", "type": "General", "tier": "2 Tier", "rss": "https://www.ngetnews.com/rss/allArticle.xml"},
+    {"media": "오피니언뉴스", "type": "General", "tier": "2 Tier", "rss": "https://www.opinionnews.co.kr/rss/allArticle.xml"},
+    {"media": "포춘코리아", "type": "General", "tier": "2 Tier", "rss": "https://www.fortunekorea.co.kr/rss/allArticle.xml"},
+    {"media": "로이슈", "type": "General", "tier": "2 Tier", "rss": "https://www.lawissue.co.kr/rss/allArticle.xml"},
+    {"media": "한국면세뉴스", "type": "General", "tier": "2 Tier", "rss": "https://www.kdfnews.com/rss/allArticle.xml"},
+    {"media": "블로터", "type": "General", "tier": "2 Tier", "rss": "https://www.bloter.net/rss/allArticle.xml"},
+    {"media": "뉴스인스페이스", "type": "General", "tier": "2 Tier", "rss": "https://www.space.or.kr/rss/allArticle.xml"},
+    {"media": "청년일보", "type": "General", "tier": "2 Tier", "rss": "https://www.youthdaily.co.kr/rss/allArticle.xml"},
+    {"media": "스카이데일리", "type": "General", "tier": "2 Tier", "rss": "https://www.skyedaily.com/rss/allArticle.xml"},
+    {"media": "뉴스토마토", "type": "General", "tier": "2 Tier", "rss": "https://www.newstomato.com/rss/all.xml"},
+    {"media": "뷰어스", "type": "General", "tier": "2 Tier", "rss": "https://theviewers.co.kr/rss/allArticle.xml"},
+    {"media": "뉴스웨이", "type": "General", "tier": "2 Tier", "rss": "https://www.newsway.co.kr/rss/allArticle.xml"},
+
+    # =========================================================
+    # 2. 제약 / 바이오 / 의료 / 헬스 전문지 (Pharma Specialty)
+    # =========================================================
+    # [Tier 1] 핵심 주요 전문지 11곳
+    {"media": "청년의사", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.docdocdoc.co.kr/rss/allArticle.xml"},
+    {"media": "데일리팜", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailypharm.com/Users/Rss/Rss.html"},
+    {"media": "의학신문", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.bosa.co.kr/rss/allArticle.xml"},
+    {"media": "뉴스더보이스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.newsthevoice.com/rss/allArticle.xml"},
+    {"media": "히트뉴스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.hitnews.co.kr/rss/allArticle.xml"},
+    {"media": "의약뉴스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.newsmp.com/rss/allArticle.xml"},
+    {"media": "팜뉴스", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.pharmnews.com/rss/allArticle.xml"},
+    {"media": "메디칼타임즈", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.medicaltimes.com/Users/Rss/Rss.html"},
+    {"media": "KBR", "type": "Specialty", "tier": "1 Tier", "rss": "http://www.koreabiomed.com/rss/allArticle.xml"},
+    {"media": "코리아헬스로그", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.koreahealthlog.com/rss/allArticle.xml"},
+    {"media": "데일리메디", "type": "Specialty", "tier": "1 Tier", "rss": "https://www.dailymedi.com/rss/allArticle.xml"},
+
+    # [Tier 2] 기타 의약 / 바이오 / 헬스 전문지 전체
+    {"media": "건강보험신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khip.co.kr/rss/allArticle.xml"},
+    {"media": "건강보험저널", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khnews.co.kr/rss/allArticle.xml"},
+    {"media": "닥터W", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.doctorw.co.kr/rss/allArticle.xml"},
+    {"media": "라포르시안", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.rapportian.com/rss/allArticle.xml"},
+    {"media": "메디팜스투데이", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.pharmstoday.com/rss/allArticle.xml"},
+    {"media": "메디칼업저버", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.monews.co.kr/rss/allArticle.xml"},
+    {"media": "메디칼트리뷴", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.medicaltribune.co.kr/rss/allArticle.xml"},
+    {"media": "메디컬헤럴드", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.medherald.co.kr/rss/allArticle.xml"},
+    {"media": "메디파나뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.medipana.com/rss/allArticle.xml"},
+    {"media": "메디포뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.medifonews.com/rss/allArticle.xml"},
+    {"media": "메디게이트뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.medigatenews.com/rss/allArticle.xml"},
+    {"media": "메디소비자뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.medisobizanews.com/rss/allArticle.xml"},
+    {"media": "메디팜헬스뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.medipharmhealth.co.kr/rss/allArticle.xml"},
+    {"media": "메디칼통신", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.mcommunication.co.kr/rss/allArticle.xml"},
+    {"media": "메디컬월드뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://medicalworldnews.co.kr/rss/allArticle.xml"},
+    {"media": "바이오스펙테이터", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.biospectator.com/rss/allArticle.xml"},
+    {"media": "병원신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.khanews.com/rss/allArticle.xml"},
+    {"media": "보건신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.bokjiro.go.kr/rss/allArticle.xml"},
+    {"media": "보건타임즈", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.baag.co.kr/rss/allArticle.xml"},
+    {"media": "사이언스엠디뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.sciencemd.com/rss/allArticle.xml"},
+    {"media": "식약신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.fmnews.co.kr/rss/allArticle.xml"},
+    {"media": "아이팜뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.ipharmnews.com/rss/allArticle.xml"},
+    {"media": "약사공론", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.kpanews.co.kr/rss/allArticle.xml"},
+    {"media": "약업신문", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.yakup.com/rss/"},
+    {"media": "의약품유통신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.kda.or.kr/rss/allArticle.xml"},
+    {"media": "의계신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.medworld.co.kr/rss/allArticle.xml"},
+    {"media": "e-의료정보", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.egye.co.kr/rss/allArticle.xml"},
+    {"media": "의사신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.doctorstimes.com/rss/allArticle.xml"},
+    {"media": "의협신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.doctorsnews.co.kr/rss/allArticle.xml"},
+    {"media": "엠디저널", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.mdjournal.kr/rss/allArticle.xml"},
+    {"media": "의료일보", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.kmedinfo.co.kr/rss/allArticle.xml"},
+    {"media": "이엠디", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.kmdnews.uk/rss/allArticle.xml"},
+    {"media": "코메디닷컴", "type": "Specialty", "tier": "2 Tier", "rss": "https://kormedi.com/rss/allArticle.xml"},
+    {"media": "헬스코리아뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.hkn24.com/rss/allArticle.xml"},
+    {"media": "헬스포커스뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.healthfocus.co.kr/rss/allArticle.xml"},
+    {"media": "현대건강신문", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.hhealth.co.kr/rss/allArticle.xml"},
+    {"media": "후생신보", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.whosaeng.com/rss/allArticle.xml"},
+    {"media": "클리닉저널", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.clinicjournal.co.kr/rss/allArticle.xml"},
+    {"media": "헬스앤라이프", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.healthi.kr/rss/allArticle.xml"},
+    {"media": "파마투데이", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.pharmatoday.co.kr/rss/allArticle.xml"},
+    {"media": "헬스인뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.healthinnews.co.kr/rss/allArticle.xml"},
+    {"media": "더바이오", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.thebio.co.kr/rss/allArticle.xml"},
+    {"media": "파마타임스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.pharmatimes.co.kr/rss/allArticle.xml"},
+    {"media": "메디컬투데이", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.mdtoday.co.kr/rss/allArticle.xml"},
+    {"media": "메디코파마뉴스", "type": "Specialty", "tier": "2 Tier", "rss": "http://www.medicopharma.co.kr/rss/allArticle.xml"},
+    {"media": "헬스조선", "type": "Specialty", "tier": "2 Tier", "rss": "https://health.chosun.com/site/data/rss/rss.xml"},
+    {"media": "헬스동아", "type": "Specialty", "tier": "2 Tier", "rss": "https://donga.com/news/rss/health"},
+    {"media": "동아사이언스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.dongascience.com/rss/all.xml"},
+    {"media": "헬스경향", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.k-health.com/rss/allArticle.xml"},
+    {"media": "매경헬스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.mkhealth.co.kr/rss/allArticle.xml"}
 ]
 
 CORPORATE_KEYWORDS = ["로슈", "Roche", "Genentech", "제넨텍", "제넨테크", "쥬가이", "Chugai", "한국로슈"]
@@ -135,7 +245,7 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# 점수 계산 함수
+# 점수 계산 함수 (Tier 1 가점 우대 반영)
 def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     full_text = f"{title} {summary}"
     score = 3
@@ -184,6 +294,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
             if re.search(r"이토베비|PIK3CA|피크레이|티루캡|이나볼리십", full_text, re.I): score += 2
         if re.search(r"삼중음성|TNBC", full_text, re.I): score -= 2
 
+    # Tier 1 매체 (일간지/전문지 주요 매체) 우대 (+1점)
     if tier == "1 Tier": score += 1
     return max(1, min(score, 10))
 
@@ -236,7 +347,7 @@ def fetch_recent_news():
     time_limit = datetime.now() - timedelta(hours=36)
     all_results = []
 
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=30) as executor:
         futures = [executor.submit(parse_single_media, m, time_limit) for m in ALL_MEDIA_LIST]
         for future in futures:
             all_results.extend(future.result())
@@ -260,7 +371,7 @@ with col_btn:
         st.rerun()
 
 raw_df = st.session_state["news_df"]
-st.write(f"⏰ 수집된 최신 기사: **{len(raw_df)}건**")
+st.write(f"⏰ 수집된 최신 기사: **{len(raw_df)}건** (총 {len(ALL_MEDIA_LIST)}개 매체 가동 중)")
 
 if not raw_df.empty:
     if st.button("🎯 중요 기사 자동 선별하기 (Top 5 자동 체크)", type="primary"):
@@ -301,7 +412,7 @@ if not raw_df.empty:
 
     st.divider()
 
-    # ★ 완벽한 Roche 이메일 HTML 포맷 생성 엔진 ★
+    # ★ Roche 마크다운 뉴스레터 템플릿 생성 엔진 ★
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
@@ -314,82 +425,33 @@ if not raw_df.empty:
                 title_date_str = now.strftime('%b %d')        # Jul 23
                 header_date_str = now.strftime('%d %B, %Y')   # 23 July, 2026
                 
-                # HTML 이메일 바디 빌드 (원문 PDF 양식과 100% 동일한 디자인/컬러)
-                html_code = f"""
-                <div id="roche-newsletter" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 680px; color: #333333; line-height: 1.5; border: 1px solid #e2e8f0; padding: 25px; border-radius: 8px; background-color: #ffffff;">
-                    
-                    <!-- 헤더 타이틀 / 날짜 -->
-                    <div style="border-bottom: 2px solid #0066CC; padding-bottom: 12px; margin-bottom: 20px;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr>
-                                <td style="font-size: 24px; font-weight: bold; color: #0066CC;">Roche Daily News Highlights</td>
-                                <td style="text-align: right; font-size: 14px; color: #666666; vertical-align: bottom;">{header_date_str}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- NEWS 섹션 타이틀 -->
-                    <div style="font-size: 20px; font-weight: bold; color: #222222; margin-bottom: 18px; letter-spacing: 0.5px;">NEWS</div>
-                """
+                output_text = f"Roche\nDaily\nNews Highlights\n\t\t\t\t\t\t\t\t{header_date_str}\n\n"
+                output_text += f"NEWS\n\n"
                 
                 for cat in categories:
+                    output_text += f"{cat}\n"
                     cat_df = selected_df[selected_df["카테고리"] == cat]
-                    html_code += f"""
-                    <div style="margin-bottom: 22px;">
-                        <div style="font-size: 15px; font-weight: bold; color: #0066CC; margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 4px;">{cat}</div>
-                        <ul style="margin: 0; padding-left: 18px; font-size: 14px; color: #333333;">
-                    """
+                    
                     if not cat_df.empty:
                         for _, r in cat_df.iterrows():
-                            html_code += f"""
-                            <li style="margin-bottom: 6px;">
-                                <a href="{r['기사링크']}" target="_blank" style="color: #1a0dab; text-decoration: underline; font-weight: 500;">{r['기사제목']}</a> 
-                                <span style="color: #666666; font-size: 13px;">({r['매체명']} {r['게재일']})</span>
-                            </li>
-                            """
+                            output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} {r['게재일']})\n"
                     else:
-                        html_code += f"""<li style="color: #888888; list-style-type: none; margin-left: -18px;">(관련 주요 기사 없음)</li>"""
-                    
-                    html_code += "</ul></div>"
-
-                # 서명 및 카피라이트 푸터
-                html_code += f"""
-                    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #666666; line-height: 1.6;">
-                        <p style="font-weight: bold; color: #333333; margin: 0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p>
-                        <p style="margin: 0;">이미규 | migyu.lee@roche.com</p>
-                        <p style="margin: 0;">김혜련 | hyeryeon.kim@roche.com</p>
-                        <p style="margin: 0 0 10px 0;">박수윤 | sue.park@roche.com</p>
-                        <p style="color: #999999; margin: 0;">© {now.year} Roche Korea Co.,Ltd</p>
-                    </div>
-                </div>
-                """
-
-                # UI 렌더링 영역
-                st.markdown("### 📧 완성된 이메일 뉴스레터 미리보기")
-                st.components.v1.html(html_code, height=650, scrolling=True)
-
-                # 클립보드 원클릭 복사 스크립트 기능
-                copy_script = f"""
-                <script>
-                function copyHtmlToClipboard() {{
-                    const container = parent.document.getElementById("roche-newsletter");
-                    if (container) {{
-                        const range = parent.document.createRange();
-                        range.selectNode(container);
-                        parent.window.getSelection().removeAllRanges();
-                        parent.window.getSelection().addRange(range);
-                        parent.document.execCommand("copy");
-                        parent.window.getSelection().removeAllRanges();
-                        alert("✅ 로슈 메일 양식 그대로 복사되었습니다! 아웃룩 메일 작성창에 Ctrl+V 하시면 됩니다.");
-                    }}
-                }}
-                </script>
-                <button onclick="copyHtmlToClipboard()" style="background-color: #0066CC; color: white; border: none; padding: 12px 24px; font-size: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
-                    📋 양식 원본 그대로 복사하기 (클릭 후 메일에 Ctrl+V)
-                </button>
-                """
-                st.components.v1.html(copy_script, height=60)
+                        output_text += "* (관련 주요 기사 없음)\n"
+                    output_text += "\n"
                 
+                output_text += f"[한국로슈 Communications & Public Affairs Chapter]\n"
+                output_text += f"이미규 | migyu.lee@roche.com\n"
+                output_text += f"김혜련 | hyeryeon.kim@roche.com\n"
+                output_text += f"박수윤 | sue.park@roche.com\n\n"
+                output_text += f"© {now.year} Roche Korea Co.,Ltd"
+
+                st.success("🎉 뉴스레터 생성이 완료되었습니다!")
+                st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
+                
+                st.markdown("### 📋 복사 전용 뉴스레터 (아래 내용 전체를 드래그해서 메일에 붙여넣으세요)")
+                st.code(output_text, language="markdown")
+                
+                st.download_button("💾 텍스트 파일로 다운로드", output_text, f"Roche_News_{now.strftime('%Y%m%d')}.txt")
             else:
                 st.warning("선택된 기사가 없습니다.")
 else:
