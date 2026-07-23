@@ -154,6 +154,8 @@ ALL_MEDIA_LIST = [
     {"media": "매경헬스", "type": "Specialty", "tier": "2 Tier", "rss": "https://www.mkhealth.co.kr/rss/allArticle.xml"}
 ]
 
+CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
+
 CORPORATE_KEYWORDS = ["로슈", "Roche", "Genentech", "제넨텍", "제넨테크", "쥬가이", "Chugai", "한국로슈"]
 
 PRODUCT_KEYWORDS = [
@@ -283,7 +285,7 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
         if re.search(r"ALK|KRAS", full_text, re.I):
             if not re.search(r"(ALK|KRAS)\s*(음성|미검출|제외|없음)", full_text, re.I): score += 2
-        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 4
+        if re.search(r"EGFR|ROS1|\bROS\b", full_text, re.I): score -= 2
 
     if re.search(r"유방암", full_text, re.I):
         if re.search(r"HER2|HER2양성|HER2\+", full_text, re.I): score += 2
@@ -298,7 +300,6 @@ def calculate_relevance_score(title, summary, category, tier="2 Tier"):
 def parse_single_media(m, time_limit):
     sub_results = []
     try:
-        # 타임아웃을 적용한 신속 요청
         response = requests.get(m["rss"], timeout=3, headers={"User-Agent": "Mozilla/5.0"})
         if response.status_code != 200:
             return sub_results
@@ -342,7 +343,7 @@ def parse_single_media(m, time_limit):
         pass
     return sub_results
 
-# 병렬 수집 로직 (60개 병렬 스레드로 대폭 확대)
+# 병렬 수집 로직 (60개 스레드)
 @st.cache_data(ttl=1800)
 def fetch_recent_news():
     time_limit = datetime.now() - timedelta(hours=36)
@@ -377,19 +378,19 @@ st.write(f"⚡ 초고속 수집 완료: 최신 기사 **{len(raw_df)}건** (총 
 if not raw_df.empty:
     if st.button("🎯 중요 기사 자동 선별하기 (Top 5 자동 체크)", type="primary"):
         auto_df = raw_df.copy()
-        for cat in ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]:
+        for cat in CATEGORIES_LIST:
             cat_indices = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False).head(5).index
             auto_df.loc[cat_indices, "선택"] = True
         st.session_state["analyzed_df"] = auto_df
         st.success("스마트 분석 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
-    categories = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
-    tabs = st.tabs([f"📌 {cat}" for cat in categories])
+    tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
     
     all_edited_dfs = []
     
-    for i, cat in enumerate(categories):
+    # 각 카테고리 탭 구성 및 수정 가능한 카테고리 드롭다운 적용
+    for i, cat in enumerate(CATEGORIES_LIST):
         with tabs[i]:
             cat_df = display_df[display_df["카테고리"] == cat].copy()
             st.markdown(f"### {cat} ({len(cat_df)}건)")
@@ -399,10 +400,16 @@ if not raw_df.empty:
                     cat_df,
                     column_config={
                         "선택": st.column_config.CheckboxColumn("선택 ✅", default=False),
+                        "카테고리": st.column_config.SelectboxColumn(
+                            "카테고리 🔄",
+                            help="기사를 다른 카테고리로 변경하려면 클릭하여 선택하세요",
+                            options=CATEGORIES_LIST,
+                            required=True
+                        ),
                         "연관도점수": st.column_config.NumberColumn("연관도 🎯", help="10점 만점 기준"),
                         "기사링크": st.column_config.LinkColumn("기사링크")
                     },
-                    disabled=["연관도점수", "카테고리", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
+                    disabled=["연관도점수", "매체명", "Tier", "검색키워드", "기사제목", "기사링크", "게재일"],
                     hide_index=True,
                     use_container_width=True,
                     key=f"editor_{cat}"
@@ -413,7 +420,7 @@ if not raw_df.empty:
 
     st.divider()
 
-    # Roche 마크다운 뉴스레터 템플릿 생성 엔진
+    # ★ 완벽한 Roche 이메일 HTML 뉴스레터 자동 생성 엔진 ★
     if all_edited_dfs:
         full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
         selected_df = full_edited_df[full_edited_df["선택"] == True]
@@ -426,33 +433,40 @@ if not raw_df.empty:
                 title_date_str = now.strftime('%b %d')        # Jul 23
                 header_date_str = now.strftime('%d %B, %Y')   # 23 July, 2026
                 
-                output_text = f"Roche\nDaily\nNews Highlights\n\t\t\t\t\t\t\t\t{header_date_str}\n\n"
-                output_text += f"NEWS\n\n"
+                # 들여쓰기를 제거한 순수 컴팩트 HTML 블록
+                html_body = f'<div style="font-family:\'Segoe UI\',Arial,sans-serif;max-width:680px;color:#333333;line-height:1.5;border:1px solid #e2e8f0;padding:25px;border-radius:8px;background-color:#ffffff;">'
+                html_body += f'<div style="border-bottom:2px solid #0066CC;padding-bottom:12px;margin-bottom:20px;"><table style="width:100%;border-collapse:collapse;"><tr><td style="font-size:24px;font-weight:bold;color:#0066CC;">Roche Daily News Highlights</td><td style="text-align:right;font-size:14px;color:#666666;vertical-align:bottom;">{header_date_str}</td></tr></table></div>'
+                html_body += f'<div style="font-size:20px;font-weight:bold;color:#222222;margin-bottom:18px;letter-spacing:0.5px;">NEWS</div>'
                 
-                for cat in categories:
-                    output_text += f"{cat}\n"
+                for cat in CATEGORIES_LIST:
                     cat_df = selected_df[selected_df["카테고리"] == cat]
+                    html_body += f'<div style="margin-bottom:22px;"><div style="font-size:15px;font-weight:bold;color:#0066CC;margin-bottom:8px;border-bottom:1px dashed #cbd5e1;padding-bottom:4px;">{cat}</div><ul style="margin:0;padding-left:18px;font-size:14px;color:#333333;">'
                     
                     if not cat_df.empty:
                         for _, r in cat_df.iterrows():
-                            output_text += f"* [{r['기사제목']}]({r['기사링크']}) ({r['매체명']} {r['게재일']})\n"
+                            html_body += f'<li style="margin-bottom:6px;"><a href="{r["기사링크"]}" target="_blank" style="color:#1a0dab;text-decoration:underline;font-weight:500;">{r["기사제목"]}</a> <span style="color:#666666;font-size:13px;">({r["매체명"]} {r["게재일"]})</span></li>'
                     else:
-                        output_text += "* (관련 주요 기사 없음)\n"
-                    output_text += "\n"
+                        html_body += f'<li style="color:#888888;list-style-type:none;margin-left:-18px;">(관련 주요 기사 없음)</li>'
+                    
+                    html_body += f'</ul></div>'
                 
-                output_text += f"[한국로슈 Communications & Public Affairs Chapter]\n"
-                output_text += f"이미규 | migyu.lee@roche.com\n"
-                output_text += f"김혜련 | hyeryeon.kim@roche.com\n"
-                output_text += f"박수윤 | sue.park@roche.com\n\n"
-                output_text += f"© {now.year} Roche Korea Co.,Ltd"
+                html_body += f'<div style="margin-top:30px;padding-top:15px;border-top:1px solid #e2e8f0;font-size:12px;color:#666666;line-height:1.6;"><p style="font-weight:bold;color:#333333;margin:0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p><p style="margin:0;">이미규 | migyu.lee@roche.com</p><p style="margin:0;">김혜련 | hyeryeon.kim@roche.com</p><p style="margin:0 0 10px 0;">박수윤 | sue.park@roche.com</p><p style="color:#999999;margin:0;">© {now.year} Roche Korea Co.,Ltd</p></div></div>'
 
                 st.success("🎉 뉴스레터 생성이 완료되었습니다!")
                 st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
                 
-                st.markdown("### 📋 복사 전용 뉴스레터 (아래 내용 전체를 드래그해서 메일에 붙여넣으세요)")
-                st.code(output_text, language="markdown")
+                st.markdown("### 📧 이메일 뉴스레터 완제품 (아래 상자를 마우스로 드래그하여 Ctrl+C 복사 후 아웃룩에 Ctrl+V 붙여넣으세요)")
                 
-                st.download_button("💾 텍스트 파일로 다운로드", output_text, f"Roche_News_{now.strftime('%Y%m%d')}.txt")
+                # 깨짐 없이 예쁘게 출력되는 표준 HTML
+                st.html(html_body)
+                
+                st.divider()
+                st.download_button(
+                    label="💾 이메일용 HTML 파일 다운로드",
+                    data=html_body,
+                    file_name=f"Roche_News_{now.strftime('%Y%m%d')}.html",
+                    mime="text/html"
+                )
             else:
                 st.warning("선택된 기사가 없습니다.")
 else:
