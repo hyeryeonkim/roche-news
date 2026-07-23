@@ -1,3 +1,11 @@
+요청하신 모든 내용이 완벽하게 반영된 app.py 최종 풀 버전 파이썬 코드입니다!
+
+이번 업데이트에서 약평위, KOBIA, 건보재정, 경제성평가 등 말씀해주신 핵심 정책 단독 키워드들을 알차게 추가하였으며, 폐암 변이 가감점 로직(ALK/KRAS +2점, EGFR/ROS -2점) 및 28개 전체 매체 피드까지 하나도 빠짐없이 100% 탑재되어 있습니다.
+
+GitHub에서 app.py 파일 전체를 아래 코드로 싹 덮어쓰기(Commit changes) 하시면 끝납니다!
+
+💻 GitHub app.py 최종 전체 교체 코드
+Python
 import streamlit as st
 import feedparser
 import pandas as pd
@@ -8,7 +16,7 @@ from time import mktime
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
 st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
-# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체)
+# 1. 일간지, 경제지, 전문지 전체 수집 매체 리스트 (28개 매체 풀 반영)
 ALL_MEDIA_LIST = [
     # [1 Tier] 주요 통신사 및 종합 일간지
     {"media": "연합뉴스", "tier": "1 Tier", "rss": "https://www.yna.co.kr/rss/news.xml"},
@@ -63,7 +71,7 @@ PRODUCT_KEYWORDS = [
     "글로피타맙", "컬럼비", "엘레비디스", "엘리비디스", "이나볼리십", "이토베비", "피아스카이", "크로발리맙", "트론티네맙"
 ]
 
-# 4. Disease / Market 뉴스 풀 버전 단독 키워드 리스트 (요청사항 100% 반영)
+# 4. Disease / Market 뉴스 풀 버전 단독 키워드 리스트
 DISEASE_KEYWORDS = [
     "킴리아", "예스카타", "졸겐스마", "스핀라자", "오나셈노진아베파르보벡", "뉴시너센", "넥사바", "렌비마", 
     "키트루다", "옵디보", "아일리아", "비오뷰", "루센티스", "아필리부", "아이델젠트", "알룬브릭", "로비큐아", 
@@ -77,12 +85,26 @@ DISEASE_KEYWORDS = [
     "업리즈나", "이네빌리주맙", "티루캡", "피크레이", "조기암", "조기유방암"
 ]
 
-# 5. 제외 키워드
-NEGATIVE_KEYWORDS = ["집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가"]
+# 5. Industry / Policy 뉴스 고유 단독 키워드 리스트 (핵심 추가 반영 완료)
+INDUSTRY_SINGLE_KEYWORDS = [
+    "약평위", "암질심", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위",
+    "KRPIA", "한국글로벌의약산업협회", "KOBIA", "한국바이오의약품협회", "한국제약바이오협회",
+    "약가협상", "약가인하", "약가", "급여재평가", "위험분담제", "RSA", "경제성평가", 
+    "고가의약품", "초고가신약", "사전심의", "사용량-약가연동", "RWD", "RWE",
+    "혁신신약", "혁신형제약기업", "정밀의료", "정밀의학", "맞춤의학", "디지털헬스케어", 
+    "디지털바이오마커", "보건의료데이터", "신의료기술", "건보재정", "건강보험정책", 
+    "분산형임상", "DCT"
+]
 
-# 6. 정교 규칙 매칭 함수
+# 6. 제외 키워드
+NEGATIVE_KEYWORDS = [
+    "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
+]
+
+# 7. 정교 규칙 매칭 함수 (카테고리 분류 핵심 로직)
 def classify_article_by_rules(text):
-    # 1) Corporate News (로슈/기업 전용 단독 키워드 최우선 분류)
+    # 1) Corporate News (로슈/기업 동향, CSR, 단독 키워드 최우선 분류)
     if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
         return "Corporate News", "(로슈*기업동향/CSR)"
         
@@ -105,25 +127,25 @@ def classify_article_by_rules(text):
     if re.search(r"독감|인플루엔자", text) and re.search(r"항바이러스제|치료제|치료|질병관리청|국가감염병|통계|조사", text):
         return "Disease/ Market News", "(독감*치료제/감염병)"
 
-    # 4) Industry / Policy News 불리언 조합 매칭
+    # 4) Industry / Policy News 매칭 (고유 단독 키워드 + 필수 조합)
+    for ik in INDUSTRY_SINGLE_KEYWORDS:
+        if re.search(re.escape(ik), text, re.I):
+            return "Industry/ Policy News", ik
+
     if re.search(r"다국적|글로벌|외자사", text, re.I) and re.search(r"제약사|제약업계|제약기업|제약업체", text) and re.search(r"인사|동정|수상|CSR|사회공헌|인수|합병|리베이트", text):
         return "Industry/ Policy News", "(글로벌제약사*동향/CSR/인사)"
     if re.search(r"임상시험|R&D|연구개발|특허", text, re.I) and re.search(r"의약품|약품|치료제|신약", text):
         return "Industry/ Policy News", "(R&D/특허*의약품)"
     if re.search(r"급여|접근성|보장성|보험|비급여", text) and re.search(r"의약품|약품|신약|항암|치료", text):
         return "Industry/ Policy News", "(급여/보장성*의약품)"
-    if re.search(r"위험분담제|RSA|RWD|RWE|사전심의", text, re.I) and re.search(r"의약품|제약|치료제|도매", text):
-        return "Industry/ Policy News", "(RSA/RWD*제약)"
     if re.search(r"환자단체총연합회|백혈병환우회|희귀난치성질환연합회", text) and re.search(r"항암제|치료제|탄원|정책|암|희귀질환|신약", text):
         return "Industry/ Policy News", "(환자단체*정책)"
-    if re.search(r"리베이트|공정거래위원회|공정위|국세청|보건복지부|복지부|질병관리청|국민건강보험공단|건보공단|건강보험심사평가원|심평원|식품의약품안전처|식약처", text) and re.search(r"제약회사|제약업계|제약산업|제약사|외자사|의약품|비급여|급여", text):
-        return "Industry/ Policy News", "(정부기관*제약업계)"
-    if re.search(r"보건의료|헬스케어|제약|국회", text) and re.search(r"입법|발의|개정|보건복지위|정부규제", text):
-        return "Industry/ Policy News", "(국회/입법*보건의료)"
+    if re.search(r"재택치료|재택의료", text) and re.search(r"제약|의약품|바이오|치료제", text):
+        return "Industry/ Policy News", "(재택의료*제약)"
 
     return None, None
 
-# 7. 연관도 점수 세부 산정 (폐암 변이 가감점 포함)
+# 8. 연관도 점수 세부 산정 (폐암 변이 가감점 반영)
 def calculate_relevance_score(title, summary, category):
     full_text = f"{title} {summary}"
     score = 4
@@ -131,7 +153,7 @@ def calculate_relevance_score(title, summary, category):
     elif category == "Product News": score += 4
     
     if any(k in full_text for k in ["로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디"]): score += 2
-    if any(p in full_text for p in ["약가", "암질심", "위험분담제", "급여", "심평원", "식약처"]): score += 1
+    if any(p in full_text for p in ["약가", "암질심", "위험분담제", "급여", "심평원", "식약처", "약평위"]): score += 1
 
     # 폐암 기사 관련 변이 가감점 로직
     if re.search(r"폐암|비소세포폐암", full_text, re.I):
@@ -142,7 +164,7 @@ def calculate_relevance_score(title, summary, category):
 
     return max(1, min(score, 10))
 
-# 8. 뉴스 수집 로직
+# 9. 뉴스 수집 로직
 @st.cache_data(ttl=300)
 def fetch_recent_news():
     results = []
@@ -158,9 +180,11 @@ def fetch_recent_news():
                 summary = entry.get("summary", entry.get("description", ""))
                 full_text = f"{title} {summary}"
                 
+                # 제외 키워드 감지 시 제외
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
                     continue
                 
+                # 게재 시간 감지 (36시간 이내)
                 pub_dt = None
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
@@ -197,7 +221,7 @@ def fetch_recent_news():
 
 raw_df = fetch_recent_news()
 
-# 9. UI 화면 구성
+# 10. UI 화면 구성
 st.write(f"⏰ 실시간 수집된 주요 뉴스: **{len(raw_df)}건**")
 
 if not raw_df.empty:
