@@ -5,9 +5,7 @@ import feedparser
 import re
 import os
 from datetime import datetime, timedelta
-from urllib.parse import quote
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from urllib.parse import quote, urlparse
 
 st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
 st.title("📰 한국로슈 Daily News Monitoring Dashboard")
@@ -25,7 +23,7 @@ CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "In
 # 🎯 수집 및 분류용 키워드 정의
 # =========================================================
 SEARCH_KEYWORDS = [
-    "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
+    "한국로슈", "로슈", "Tecentriq", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
     "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비",
     "약평위", "암질심", "약가인하", "급여재평가", "위험분담제", "경평면제", "사용량약가연동",
     "척수성근위축증", "시신경척수염", "황반변성", "DLBCL", "소포성림프종"
@@ -70,30 +68,102 @@ NEGATIVE_KEYWORDS = [
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
-# 카테고리 자동 분류 규칙
+# 💡 URL 도메인 기반 실제 매체명 파싱 함수
+def extract_media_name(link, original_link=""):
+    target_link = original_link if original_link else link
+    domain = urlparse(target_link).netloc.lower()
+
+    domain_map = {
+        "dailypharm.com": "데일리팜",
+        "docdocdoc.co.kr": "청년의사",
+        "medipana.com": "메디파나뉴스",
+        "monews.co.kr": "메디칼업저버",
+        "bosa.co.kr": "의학신문",
+        "hitnews.co.kr": "히트뉴스",
+        "pharmnews.com": "팜뉴스",
+        "newsmp.com": "의약뉴스",
+        "doctorsnews.co.kr": "의협신문",
+        "koreabiomed.com": "KBR",
+        "koreahealthlog.com": "코리아헬스로그",
+        "dailymedi.com": "데일리메디",
+        "medicaltimes.com": "메디칼타임즈",
+        "yna.co.kr": "연합뉴스",
+        "news1.kr": "뉴스1",
+        "newsis.com": "뉴시스",
+        "chosun.com": "조선일보",
+        "joongang.co.kr": "중앙일보",
+        "donga.com": "동아일보",
+        "hankookilbo.com": "한국일보",
+        "segye.com": "세계일보",
+        "munhwa.com": "문화일보",
+        "kmib.co.kr": "국민일보",
+        "kukinews.com": "쿠키뉴스",
+        "hani.co.kr": "한겨레",
+        "seoul.co.kr": "서울신문",
+        "mk.co.kr": "매일경제",
+        "mbn.co.kr": "MBN",
+        "hankyung.com": "한국경제",
+        "wowtv.co.kr": "한국경제TV",
+        "fnnews.com": "파이낸셜뉴스",
+        "sedaily.co.kr": "서울경제",
+        "heraldcorp.com": "헤럴드경제",
+        "mt.co.kr": "머니투데이",
+        "asiae.co.kr": "아시아경제",
+        "edaily.co.kr": "이데일리",
+        "etoday.co.kr": "이투데이",
+        "dt.co.kr": "디지털타임스",
+        "etnews.com": "전자신문",
+        "zdnet.co.kr": "지디넷코리아",
+        "thebell.co.kr": "더벨",
+        "yakup.com": "약업신문",
+        "kpanews.co.kr": "약사공론",
+        "biospectator.com": "바이오스펙테이터"
+    }
+
+    for d, name in domain_map.items():
+        if d in domain:
+            return name
+
+    # 도메인 파싱 실패 시 기본 구명
+    cleaned_domain = domain.replace("www.", "").replace("m.", "").split(".")[0].capitalize()
+    return cleaned_domain if cleaned_domain else "주요언론사"
+
+# 텍스트 단어 유사도 단순 계산 함수
+def calculate_jaccard_similarity(str1, str2):
+    set1 = set(re.findall(r'\w+', str1.lower()))
+    set2 = set(re.findall(r'\w+', str2.lower()))
+    if not set1 or not set2:
+        return 0.0
+    return len(set1 & set2) / len(set1 | set2)
+
+# 카테고리 유연 자동 분류 규칙
 def classify_article_by_rules(text):
     text_lower = text.lower()
-    if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I) and re.search(r"한국|본사|실적|대표|인사|CSR|사회공헌|한국로슈", text):
-        return "Corporate News", "(로슈*기업동향/CSR)"
-        
-    for ck in CORPORATE_KEYWORDS:
-        if ck.lower() in text_lower:
-            return "Corporate News", ck
-
+    
+    # 1. Product News
     for p in PRODUCT_KEYWORDS:
         if p.lower() in text_lower:
             return "Product News", p
 
-    for dk in DISEASE_KEYWORDS:
-        if dk.lower() in text_lower:
-            return "Disease/ Market News", dk
+    # 2. Corporate News
+    if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I):
+        return "Corporate News", "로슈(Roche)"
 
+    # 3. Industry / Policy News
     for ik in INDUSTRY_KEYWORDS:
         if ik.lower() in text_lower:
             return "Industry/ Policy News", ik
 
-    if re.search(r"급여|접근성|보장성|보험|비급여", text) and re.search(r"의약품|약품|신약|항암|치료", text):
-        return "Industry/ Policy News", "(급여/보장성*의약품)"
+    # 4. Disease / Market News
+    for dk in DISEASE_KEYWORDS:
+        if dk.lower() in text_lower:
+            return "Disease/ Market News", dk
+
+    if re.search(r"급여|접근성|보장성|보험|비급여|약가|심평원|식약처", text):
+        return "Industry/ Policy News", "(보건정책/급여)"
+
+    if re.search(r"암|질환|치료제|임상|학회|투여|적응증", text):
+        return "Disease/ Market News", "(질환/시장동향)"
 
     return None, None
 
@@ -129,7 +199,7 @@ def calculate_relevance_score(title, summary, category):
             score += 3
 
     elif category == "Disease/ Market News":
-        # 1순위: [경쟁 치료제 + 연관 DA + 주요 이벤트] 콤보 매칭 시 최상위 격상 (+4~5점)
+        score += 2
         combo_matched = False
         
         # SMA
@@ -148,45 +218,34 @@ def calculate_relevance_score(title, summary, category):
         elif "엔허투" in full_text and re.search(r"유방암|HER2|HER2양성|HER2\+", full_text, re.I):
             score += 4; combo_matched = True
 
-        # 이벤트 가점 (급여/임상/허가)
         if combo_matched and any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "약평위", "암질심"]):
             score += 1
 
-        # 2순위: KOL 교수 연구 및 보건 통계 레퍼런스 (+3점)
         if any(kol in full_text for kol in ["교수", "연구팀", "발병률 1위", "주의보", "질병청 통계", "치료 가이드라인 개정", "학술대회발표"]):
             if any(r_dis in full_text for r_dis in ["유방암", "폐암", "간암", "혈액암", "황반변성", "척수성근위축증", "시신경척수염"]):
                 score += 3
 
-        # 비관련 질환 감점
-        if "유방암" in full_text and not re.search(r"HER2|HER2양성|HER2\+|HR\+", full_text, re.I):
-            score -= 3
-        if "혈액암" in full_text and not any(ly in full_text for ly in ["DLBCL", "소포성림프종", "소포성 림프종"]):
-            score -= 3
-        if not combo_matched and not any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "약평위", "암질심"]):
-            score -= 2  # 질환명만 있고 이벤트 없는 단독 보도 감점
-
     elif category == "Industry/ Policy News":
-        score += 2
+        score += 3
         if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]): score += 3
-        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법"]): score += 2
+        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "식약처", "심평원"]): score += 2
 
-    # Title 직접 노출 추가 가점
     if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "약가", "급여", "암질심", "약평위"]):
         score += 2
 
     return max(1, min(score, 10))
 
 # =========================================================
-# 📡 1. 네이버 뉴스 API 수집 함수
+# 📡 1. 네이버 뉴스 API 수집 함수 (최근 36시간 필터링)
 # =========================================================
-def fetch_naver_news(keyword):
+def fetch_naver_news(keyword, time_limit):
     results = []
     headers = {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     enc_kw = quote(keyword)
-    url = f"https://openapi.naver.com/v1/search/news.json?query={enc_kw}&display=100&sort=date"
+    url = f"https://openapi.naver.com/v1/search/news.json?query={enc_kw}&display=50&sort=date"
     
     try:
         res = requests.get(url, headers=headers, timeout=5)
@@ -195,9 +254,9 @@ def fetch_naver_news(keyword):
             for item in items:
                 title = re.sub(r'<[^>]+>', '', item.get("title", ""))
                 summary = re.sub(r'<[^>]+>', '', item.get("description", ""))
-                link = item.get("originallink", item.get("link", ""))
+                link = item.get("link", "")
+                origin_link = item.get("originallink", "")
                 
-                # 게재일 파싱
                 pub_date_raw = item.get("pubDate", "")
                 pub_dt = datetime.now()
                 try:
@@ -205,19 +264,12 @@ def fetch_naver_news(keyword):
                 except:
                     pass
 
-                # 언론사명 추출 (링크 기준)
-                media_name = "네이버제휴매체"
-                if "dailypharm" in link: media_name = "데일리팜"
-                elif "docdocdoc" in link: media_name = "청년의사"
-                elif "medipana" in link: media_name = "메디파나뉴스"
-                elif "monews" in link: media_name = "메디칼업저버"
-                elif "bosa" in link: media_name = "의학신문"
-                elif "hitnews" in link: media_name = "히트뉴스"
-                elif "pharmnews" in link: media_name = "팜뉴스"
-                elif "newsmp" in link: media_name = "의약뉴스"
-                elif "yna.co.kr" in link: media_name = "연합뉴스"
-                elif "news1.kr" in link: media_name = "뉴스1"
-                elif "newsis" in link: media_name = "뉴시스"
+                # ⏱️ [최근 36시간 이전 기사 배제]
+                if pub_dt < time_limit:
+                    continue
+
+                # 💡 명확한 매체명 추출
+                media_name = extract_media_name(link, origin_link)
 
                 full_text = f"{title} {summary}"
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
@@ -233,7 +285,7 @@ def fetch_naver_news(keyword):
                         "매체명": media_name,
                         "검색키워드": matched_kw,
                         "기사제목": title,
-                        "기사링크": link,
+                        "기사링크": origin_link if origin_link else link,
                         "게재일": pub_dt.strftime('%m/%d'),
                         "pub_dt": pub_dt
                     })
@@ -242,9 +294,9 @@ def fetch_naver_news(keyword):
     return results
 
 # =========================================================
-# 📡 2. 구글 뉴스 RSS 수집 함수 (보완용)
+# 📡 2. 구글 뉴스 RSS 수집 함수 (최근 36시간 필터링)
 # =========================================================
-def fetch_google_news(keyword):
+def fetch_google_news(keyword, time_limit):
     results = []
     enc_kw = quote(f"{keyword} when:2d")
     rss_url = f"https://news.google.com/rss/search?q={enc_kw}&hl=ko&gl=KR&ceid=KR:ko"
@@ -256,7 +308,14 @@ def fetch_google_news(keyword):
             link = entry.get("link", "")
             summary = entry.get("summary", "")
             
-            # 매체명 분리 (예: "기사제목 - 데일리팜")
+            pub_dt = datetime.now()
+            if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                from time import mktime
+                pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
+
+            if pub_dt < time_limit:
+                continue
+
             media_name = "구글제휴매체"
             if " - " in title:
                 parts = title.rsplit(" - ", 1)
@@ -278,8 +337,8 @@ def fetch_google_news(keyword):
                     "검색키워드": matched_kw,
                     "기사제목": title,
                     "기사링크": link,
-                    "게재일": datetime.now().strftime('%m/%d'),
-                    "pub_dt": datetime.now()
+                    "게재일": pub_dt.strftime('%m/%d'),
+                    "pub_dt": pub_dt
                 })
     except Exception:
         pass
@@ -291,42 +350,34 @@ def fetch_google_news(keyword):
 @st.cache_data(ttl=1800)
 def fetch_all_integrated_news():
     all_raw = []
+    time_limit = datetime.now() - timedelta(hours=36)
     
-    # 1. 네이버 & 구글 키워드 수집
-    for kw in SEARCH_KEYWORDS[:12]:  # 핵심 키워드 중심 피치
-        all_raw.extend(fetch_naver_news(kw))
-        all_raw.extend(fetch_google_news(kw))
+    # 카테고리 균형을 위해 대표 키워드 균등 수집
+    for kw in SEARCH_KEYWORDS:
+        all_raw.extend(fetch_naver_news(kw, time_limit))
+        all_raw.extend(fetch_google_news(kw, time_limit))
         
     df = pd.DataFrame(all_raw)
     if df.empty:
         return df
 
-    # 2. 완전 동일 기사 자동 제거 (1차 정돈)
+    # 완전 동일 기사 중복 제거
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
-    # 3. 과거 선택 학습 히스토리 기반 ML 가산점 부여
+    # 과거 선택 학습 히스토리 가산점 부여
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
             if len(history_df) >= 5 and "기사제목" in history_df.columns:
                 past_titles = history_df["기사제목"].dropna().tolist()
-                current_titles = df["기사제목"].tolist()
-
-                vectorizer = TfidfVectorizer().fit(past_titles + current_titles)
-                past_vecs = vectorizer.transform(past_titles)
-                curr_vecs = vectorizer.transform(current_titles)
-
-                sim_matrix = cosine_similarity(curr_vecs, past_vecs)
-                max_sims = sim_matrix.max(axis=1)
-
-                for idx, sim in enumerate(max_sims):
-                    if sim > 0.35:
-                        bonus = round(sim * 2, 1)
-                        df.iloc[idx, df.columns.get_loc("연관도점수")] = min(10, df.iloc[idx]["연관도점수"] + bonus)
+                for idx, row in df.iterrows():
+                    curr_title = row["기사제목"]
+                    max_sim = max([calculate_jaccard_similarity(curr_title, pt) for pt in past_titles], default=0)
+                    if max_sim > 0.35:
+                        df.loc[idx, "연관도점수"] = min(10, df.loc[idx, "연관도점수"] + round(max_sim * 2, 1))
         except Exception:
             pass
 
-    # 정렬 (연관도점수 내림차순, 게재일 내림차순)
     df = df.sort_values(by=["연관도점수", "pub_dt"], ascending=[False, False]).drop(columns=["pub_dt"])
     return df
 
@@ -367,13 +418,12 @@ if os.path.exists(HISTORY_FILE):
     except Exception:
         pass
 
-st.write(f"⚡ 통합 포털 초고속 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
+st.write(f"⚡ 최근 36시간 통합 포털 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
 
 if not raw_df.empty:
     if st.button("🎯 중요 기사 자동 선별하기 (유사 보도자료 중 대표 1건만 선별)", type="primary"):
         auto_df = raw_df.copy()
         
-        # 💡 유사 보도자료 중복 방지 스마트 선별 알고리즘
         for cat in CATEGORIES_LIST:
             cat_df = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False)
             selected_indices = []
@@ -383,9 +433,8 @@ if not raw_df.empty:
                 title = row["기사제목"]
                 is_duplicate = False
                 for s_title in selected_titles:
-                    vec = TfidfVectorizer().fit_transform([title, s_title])
-                    sim = cosine_similarity(vec[0:1], vec[1:2])[0][0]
-                    if sim > 0.55:  # 55% 이상 비슷하면 동일 보도자료로 판단
+                    sim = calculate_jaccard_similarity(title, s_title)
+                    if sim > 0.4:
                         is_duplicate = True
                         break
                 
