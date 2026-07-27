@@ -6,7 +6,6 @@ import re
 import os
 from datetime import datetime, timedelta
 from urllib.parse import quote, urlparse
-from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="Roche Daily News Monitoring (Trade Only)", layout="wide")
 st.title("📰 한국로슈 전문지(74개) 전용 Monitoring Dashboard")
@@ -137,7 +136,6 @@ def calculate_jaccard_similarity(str1, str2):
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
-# 매체명 매핑 로직
 def identify_media_name(link, default_name="전문지"):
     domain = urlparse(link).netloc.lower()
     
@@ -279,7 +277,6 @@ def fetch_track_a_news(keyword, time_limit):
                     continue
 
                 media_name = identify_media_name(link)
-                # 🎯 Track A 지정 29개 전문지만 통과
                 if media_name not in TRACK_A_MEDIA:
                     continue
 
@@ -316,7 +313,7 @@ def fetch_track_b_news(keyword, time_limit):
         
         try:
             feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:5]:  # 최근 5개 기사 한정
+            for entry in feed.entries[:5]:
                 title = entry.get("title", "")
                 link = entry.get("link", "")
                 summary = entry.get("summary", "")
@@ -355,7 +352,7 @@ def fetch_track_b_news(keyword, time_limit):
     return results
 
 # =========================================================
-# 📡 3. Track C: 직접 도메인 크롤링 (37개 전문지)
+# 📡 3. Track C: 정규식 기반 직접 도메인 크롤링 (37개 전문지)
 # =========================================================
 def fetch_track_c_news(time_limit):
     results = []
@@ -365,20 +362,20 @@ def fetch_track_c_news(time_limit):
         try:
             res = requests.get(target_url, headers=headers, timeout=4)
             if res.status_code == 200:
-                soup = BeautifulSoup(res.text, 'html.parser')
-                # <a> 태그에서 제목과 링크 추출
-                links = soup.find_all('a', href=True)
+                html_text = res.text
+                # 정규식으로 <a> 태그 내 링크 및 제목 추출 (bs4 패키지 무의존)
+                pattern = r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
+                matches = re.findall(pattern, html_text, re.IGNORECASE | re.DOTALL)
                 
-                for a in links:
-                    title = a.get_text(strip=True)
-                    href = a['href']
+                for href, title_raw in matches:
+                    title = re.sub(r'<[^>]+>', '', title_raw).strip()
+                    title = re.sub(r'\s+', ' ', title)
                     
-                    if len(title) < 10 or any(ignore in href for ignore in ["javascript", "login", "banner"]):
+                    if len(title) < 10 or any(ignore in href.lower() for ignore in ["javascript", "login", "banner", "bbs"]):
                         continue
 
                     full_url = href if href.startswith("http") else target_url.rstrip('/') + '/' + href.lstrip('/')
                     
-                    # 키워드 매칭 체킹
                     matched_cat, matched_kw = classify_article_by_rules(title)
                     if matched_cat:
                         score = calculate_relevance_score(title, "", matched_cat)
@@ -405,25 +402,20 @@ def fetch_all_trade_news():
     all_raw = []
     time_limit = datetime.now() - timedelta(hours=36)
     
-    # 1. Track A (네이버 29개 전문지) 수집
     for kw in SEARCH_KEYWORDS[:10]:
         all_raw.extend(fetch_track_a_news(kw, time_limit))
         
-    # 2. Track B (구글 site: 8개 전문지) 수집
     for kw in SEARCH_KEYWORDS[:6]:
         all_raw.extend(fetch_track_b_news(kw, time_limit))
         
-    # 3. Track C (직접 크롤링 37개 전문지) 수집
     all_raw.extend(fetch_track_c_news(time_limit))
 
     df = pd.DataFrame(all_raw)
     if df.empty:
         return df
 
-    # 중복 제거 (제목 기준)
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
-    # 학습 히스토리 점수 가산
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
