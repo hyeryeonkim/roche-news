@@ -6,11 +6,11 @@ import re
 import os
 from datetime import datetime, timedelta
 from urllib.parse import quote, urlparse
+from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
-st.title("📰 한국로슈 Daily News Monitoring Dashboard")
+st.set_page_config(page_title="Roche Daily News Monitoring (Trade Only)", layout="wide")
+st.title("📰 한국로슈 전문지(74개) 전용 Monitoring Dashboard")
 
-# 히스토리 저장 파일 경로
 HISTORY_FILE = "selected_articles_history.csv"
 
 # 네이버 Open API 인증키
@@ -20,10 +20,72 @@ NAVER_CLIENT_SECRET = "cxR2cC5hmC"
 CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
 
 # =========================================================
-# 🎯 수집 및 분류용 키워드 정의
+# 🎯 74개 전문지 마스터 라인업 정의
+# =========================================================
+# Track A: 네이버 제휴 전문지 29개
+TRACK_A_MEDIA = [
+    "데일리팜", "청년의사", "데일리메디", "메디칼타임즈", "메디칼업저버", "메디파나뉴스", "팜뉴스", 
+    "의약뉴스", "의협신문", "의학신문", "KBR", "코리아헬스로그", "히트뉴스", "메디게이트뉴스", 
+    "메디소비자뉴스", "코메디닷컴", "메디팜스투데이", "약사공론", "e-의료정보", "메디칼트리뷴", 
+    "라포르시안", "후생신보", "약업신문", "더바이오", "바이오스펙테이터", "메디컬월드뉴스", 
+    "보건신문", "메디컬투데이", "메디코파마"
+]
+
+# Track B: 구글 우회 제휴 전문지 8개 (매체명: 타깃 도메인)
+TRACK_B_MEDIA = {
+    "뉴스더보이스": "newsthevoice.com",
+    "메디포뉴스": "medifonews.com",
+    "현대건강신문": "hhealth.co.kr",
+    "식약신문": "fmnews.kr",
+    "의계신문(메드월드뉴스)": "medworld.co.kr",
+    "헬스오": "healtho.co.kr",
+    "바이오타임즈": "biotimes.co.kr",
+    "팍스메디컬뉴스": "paxmedicalnews.com"
+}
+
+# Track C: 직접 크롤링 전문지 37개 (매체명: 사이트 URL)
+TRACK_C_MEDIA = {
+    "병원신문": "http://www.khanews.com",
+    "의사신문": "http://www.doctorstimes.com",
+    "헬스코리아뉴스": "http://www.hkn24.com",
+    "파마타임스": "https://www.pharmatimes.co.kr",
+    "메디컬헤럴드": "http://www.medherald.co.kr",
+    "데일리메디팜": "http://www.dailymedipharm.com",
+    "건강보험신문": "https://www.gunbo.kr",
+    "건강보험저널": "https://hijournal.co.kr",
+    "닥터W": "http://www.doctorw.co.kr",
+    "메디팜헬스뉴스": "http://www.medipharmhealth.co.kr",
+    "메디칼통신": "https://www.medicalagency.co.kr",
+    "보건타임즈": "http://www.bktimes.net",
+    "사이언스엠디뉴스": "http://www.sciencemd.com",
+    "식약일보": "https://www.kfdn.co.kr",
+    "아이팜뉴스": "http://www.ipharmnews.com",
+    "의약품유통신문": "http://www.kpdanews.kr",
+    "엠디저널": "http://www.mdjournal.kr",
+    "헬스포커스뉴스": "http://www.healthfocus.co.kr",
+    "클리닉저널": "http://www.clinicjournal.co.kr",
+    "헬스앤라이프": "http://www.healthi.kr",
+    "파마투데이": "http://www.pharmatoday.co.kr",
+    "메디트리트저널": "https://www.mtjpost.com",
+    "메디텔레스코프뉴스": "https://www.meditelescope.co.kr",
+    "성인병뉴스": "https://www.cdpnews.co.kr",
+    "안티에이징뉴스": "https://medichacha.co.kr",
+    "엠디포스트": "http://www.mdpost.co.kr",
+    "한국식약경제신문": "http://www.kefm.co.kr",
+    "헬스앤마켓": "https://www.h-money.co.kr",
+    "웰스데일리": "http://www.wealthdaily.co.kr",
+    "메디팜뉴스": "http://www.medipharmnews.com",
+    "헬스비즈": "http://www.healthbiz.co.kr",
+    "뉴스맥": "http://www.newsmac.co.kr",
+    "키닥터": "http://www.keydoctor.co.kr",
+    "약품신문": "https://www.yakpum.co.kr"
+}
+
+# =========================================================
+# 🎯 키워드 세트 정의
 # =========================================================
 SEARCH_KEYWORDS = [
-    "한국로슈", "로슈", "Tecentriq", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
+    "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
     "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비",
     "약평위", "암질심", "약가인하", "급여재평가", "위험분담제", "경평면제", "사용량약가연동",
     "척수성근위축증", "시신경척수염", "황반변성", "DLBCL", "소포성림프종"
@@ -68,67 +130,6 @@ NEGATIVE_KEYWORDS = [
     "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
 ]
 
-# 💡 URL 도메인 기반 실제 매체명 파싱 함수
-def extract_media_name(link, original_link=""):
-    target_link = original_link if original_link else link
-    domain = urlparse(target_link).netloc.lower()
-
-    domain_map = {
-        "dailypharm.com": "데일리팜",
-        "docdocdoc.co.kr": "청년의사",
-        "medipana.com": "메디파나뉴스",
-        "monews.co.kr": "메디칼업저버",
-        "bosa.co.kr": "의학신문",
-        "hitnews.co.kr": "히트뉴스",
-        "pharmnews.com": "팜뉴스",
-        "newsmp.com": "의약뉴스",
-        "doctorsnews.co.kr": "의협신문",
-        "koreabiomed.com": "KBR",
-        "koreahealthlog.com": "코리아헬스로그",
-        "dailymedi.com": "데일리메디",
-        "medicaltimes.com": "메디칼타임즈",
-        "yna.co.kr": "연합뉴스",
-        "news1.kr": "뉴스1",
-        "newsis.com": "뉴시스",
-        "chosun.com": "조선일보",
-        "joongang.co.kr": "중앙일보",
-        "donga.com": "동아일보",
-        "hankookilbo.com": "한국일보",
-        "segye.com": "세계일보",
-        "munhwa.com": "문화일보",
-        "kmib.co.kr": "국민일보",
-        "kukinews.com": "쿠키뉴스",
-        "hani.co.kr": "한겨레",
-        "seoul.co.kr": "서울신문",
-        "mk.co.kr": "매일경제",
-        "mbn.co.kr": "MBN",
-        "hankyung.com": "한국경제",
-        "wowtv.co.kr": "한국경제TV",
-        "fnnews.com": "파이낸셜뉴스",
-        "sedaily.co.kr": "서울경제",
-        "heraldcorp.com": "헤럴드경제",
-        "mt.co.kr": "머니투데이",
-        "asiae.co.kr": "아시아경제",
-        "edaily.co.kr": "이데일리",
-        "etoday.co.kr": "이투데이",
-        "dt.co.kr": "디지털타임스",
-        "etnews.com": "전자신문",
-        "zdnet.co.kr": "지디넷코리아",
-        "thebell.co.kr": "더벨",
-        "yakup.com": "약업신문",
-        "kpanews.co.kr": "약사공론",
-        "biospectator.com": "바이오스펙테이터"
-    }
-
-    for d, name in domain_map.items():
-        if d in domain:
-            return name
-
-    # 도메인 파싱 실패 시 기본 구명
-    cleaned_domain = domain.replace("www.", "").replace("m.", "").split(".")[0].capitalize()
-    return cleaned_domain if cleaned_domain else "주요언론사"
-
-# 텍스트 단어 유사도 단순 계산 함수
 def calculate_jaccard_similarity(str1, str2):
     set1 = set(re.findall(r'\w+', str1.lower()))
     set2 = set(re.findall(r'\w+', str2.lower()))
@@ -136,25 +137,60 @@ def calculate_jaccard_similarity(str1, str2):
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
-# 카테고리 유연 자동 분류 규칙
+# 매체명 매핑 로직
+def identify_media_name(link, default_name="전문지"):
+    domain = urlparse(link).netloc.lower()
+    
+    mapping = {
+        "dailypharm.com": "데일리팜",
+        "docdocdoc.co.kr": "청년의사",
+        "dailymedi.com": "데일리메디",
+        "medicaltimes.com": "메디칼타임즈",
+        "monews.co.kr": "메디칼업저버",
+        "medipana.com": "메디파나뉴스",
+        "pharmnews.com": "팜뉴스",
+        "newsmp.com": "의약뉴스",
+        "doctorsnews.co.kr": "의협신문",
+        "bosa.co.kr": "의학신문",
+        "koreabiomed.com": "KBR",
+        "koreahealthlog.com": "코리아헬스로그",
+        "hitnews.co.kr": "히트뉴스",
+        "medigate.net": "메디게이트뉴스",
+        "medisobizanews.com": "메디소비자뉴스",
+        "kormedi.com": "코메디닷컴",
+        "mediphasstoday.com": "메디팜스투데이",
+        "kpanews.co.kr": "약사공론",
+        "e-mednews.com": "e-의료정보",
+        "medicaltribune.co.kr": "메디칼트리뷴",
+        "rapportian.com": "라포르시안",
+        "hns.or.kr": "후생신보",
+        "yakup.com": "약업신문",
+        "thebio.co.kr": "더바이오",
+        "biospectator.com": "바이오스펙테이터",
+        "medicalworldnews.co.kr": "메디컬월드뉴스",
+        "bokgunnews.com": "보건신문",
+        "mdtoday.co.kr": "메디컬투데이",
+        "medicopharma.co.kr": "메디코파마"
+    }
+    
+    for d, name in mapping.items():
+        if d in domain:
+            return name
+    return default_name
+
 def classify_article_by_rules(text):
     text_lower = text.lower()
-    
-    # 1. Product News
     for p in PRODUCT_KEYWORDS:
         if p.lower() in text_lower:
             return "Product News", p
 
-    # 2. Corporate News
     if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I):
         return "Corporate News", "로슈(Roche)"
 
-    # 3. Industry / Policy News
     for ik in INDUSTRY_KEYWORDS:
         if ik.lower() in text_lower:
             return "Industry/ Policy News", ik
 
-    # 4. Disease / Market News
     for dk in DISEASE_KEYWORDS:
         if dk.lower() in text_lower:
             return "Disease/ Market News", dk
@@ -167,28 +203,15 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# =========================================================
-# 🎯 고도화 스코어링 엔진 (1점 베이스 Zero-based Approach)
-# =========================================================
 def calculate_relevance_score(title, summary, category):
     full_text = f"{title} {summary}"
-    score = 1  # 기본 1점 시작
+    score = 1
 
-    # 🚫 [강력 감점 1] 컬럼비아 대학교 관련 연구 기사 오탐 제거 (-8점)
     if re.search(r"컬럼비아\s*대|컬럼비아대|컬럼비아\s*대학교|columbia\s*univ", full_text, re.I):
         return 1
-
-    # 🚫 [강력 감점 2] 일반 생활건강/식습관/다이어트/칼럼
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단", "식습관"]):
         return 1
 
-    # 🚫 [감점 3] 해외 소식 (FDA/EMA/글로벌 등) 중 국내 키워드가 없으면 후순위 (-2점)
-    is_global = any(g_kw in full_text for g_kw in ["FDA", "EMA", "NCCN", "미국", "유럽", "글로벌", "본사"])
-    is_domestic = any(d_kw in full_text for d_kw in ["한국", "국내", "식약처", "심평원", "건보공단", "복지부", "약평위", "암질심"])
-    if is_global and not is_domestic:
-        score -= 2
-
-    # 🎯 [카테고리별 가점]
     if category == "Corporate News":
         score += 3
         if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 3
@@ -201,34 +224,23 @@ def calculate_relevance_score(title, summary, category):
     elif category == "Disease/ Market News":
         score += 2
         combo_matched = False
-        
-        # SMA
         if any(p in full_text for p in ["졸겐스마", "스핀라자", "오나셈노진", "뉴시너센"]) and any(d in full_text for d in ["척수성근위축증", "SMA", "신경근육"]):
             score += 4; combo_matched = True
-        # NMOSD / MS
-        elif any(p in full_text for p in ["울토미리스", "업리즈나", "티사브리", "렘트라다", "라불리주맙", "이네빌리주맙"]) and any(d in full_text for d in ["시신경척수염", "NMOSD", "다발성경화증"]):
+        elif any(p in full_text for p in ["울토미리스", "업리즈나", "티사브리", "렘트라다"]) and any(d in full_text for d in ["시신경척수염", "NMOSD", "다발성경화증"]):
             score += 4; combo_matched = True
-        # 안과 (nAMD / DME)
-        elif any(p in full_text for p in ["아일리아", "비오뷰", "루센티스", "아필리부"]) and any(d in full_text for d in ["황반변성", "황반부종", "당뇨병성망막병증", "DME", "nAMD"]):
+        elif any(p in full_text for p in ["아일리아", "비오뷰", "루센티스", "아필리부"]) and any(d in full_text for d in ["황반변성", "황반부종", "DME", "nAMD"]):
             score += 4; combo_matched = True
-        # 혈액암 / DLBCL
-        elif any(p in full_text for p in ["킴리아", "예스카타", "엡킨리", "앱킨리", "림카토", "민쥬비"]) and any(d in full_text for d in ["DLBCL", "소포성림프종", "거대B세포림프종", "혈액암"]):
+        elif any(p in full_text for p in ["킴리아", "예스카타", "엡킨리"]) and any(d in full_text for d in ["DLBCL", "소포성림프종", "혈액암"]):
             score += 4; combo_matched = True
-        # HER2+ 유방암
-        elif "엔허투" in full_text and re.search(r"유방암|HER2|HER2양성|HER2\+", full_text, re.I):
+        elif "엔허투" in full_text and re.search(r"유방암|HER2|HER2양성", full_text, re.I):
             score += 4; combo_matched = True
 
         if combo_matched and any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "약평위", "암질심"]):
             score += 1
 
-        if any(kol in full_text for kol in ["교수", "연구팀", "발병률 1위", "주의보", "질병청 통계", "치료 가이드라인 개정", "학술대회발표"]):
-            if any(r_dis in full_text for r_dis in ["유방암", "폐암", "간암", "혈액암", "황반변성", "척수성근위축증", "시신경척수염"]):
-                score += 3
-
     elif category == "Industry/ Policy News":
         score += 3
         if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]): score += 3
-        if any(gov in full_text for gov in ["보건복지위", "국정감사", "국감", "법안", "발의", "입법", "식약처", "심평원"]): score += 2
 
     if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "약가", "급여", "암질심", "약평위"]):
         score += 2
@@ -236,9 +248,9 @@ def calculate_relevance_score(title, summary, category):
     return max(1, min(score, 10))
 
 # =========================================================
-# 📡 1. 네이버 뉴스 API 수집 함수 (최근 36시간 필터링)
+# 📡 1. Track A: 네이버 API 전용 수집 (29개 전문지 필터링)
 # =========================================================
-def fetch_naver_news(keyword, time_limit):
+def fetch_track_a_news(keyword, time_limit):
     results = []
     headers = {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -254,8 +266,7 @@ def fetch_naver_news(keyword, time_limit):
             for item in items:
                 title = re.sub(r'<[^>]+>', '', item.get("title", ""))
                 summary = re.sub(r'<[^>]+>', '', item.get("description", ""))
-                link = item.get("link", "")
-                origin_link = item.get("originallink", "")
+                link = item.get("originallink", item.get("link", ""))
                 
                 pub_date_raw = item.get("pubDate", "")
                 pub_dt = datetime.now()
@@ -264,12 +275,13 @@ def fetch_naver_news(keyword, time_limit):
                 except:
                     pass
 
-                # ⏱️ [최근 36시간 이전 기사 배제]
                 if pub_dt < time_limit:
                     continue
 
-                # 💡 명확한 매체명 추출
-                media_name = extract_media_name(link, origin_link)
+                media_name = identify_media_name(link)
+                # 🎯 Track A 지정 29개 전문지만 통과
+                if media_name not in TRACK_A_MEDIA:
+                    continue
 
                 full_text = f"{title} {summary}"
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
@@ -285,7 +297,7 @@ def fetch_naver_news(keyword, time_limit):
                         "매체명": media_name,
                         "검색키워드": matched_kw,
                         "기사제목": title,
-                        "기사링크": origin_link if origin_link else link,
+                        "기사링크": link,
                         "게재일": pub_dt.strftime('%m/%d'),
                         "pub_dt": pub_dt
                     })
@@ -294,77 +306,124 @@ def fetch_naver_news(keyword, time_limit):
     return results
 
 # =========================================================
-# 📡 2. 구글 뉴스 RSS 수집 함수 (최근 36시간 필터링)
+# 📡 2. Track B: 구글 뉴스 site: 우회 수집 (8개 전문지)
 # =========================================================
-def fetch_google_news(keyword, time_limit):
+def fetch_track_b_news(keyword, time_limit):
     results = []
-    enc_kw = quote(f"{keyword} when:2d")
-    rss_url = f"https://news.google.com/rss/search?q={enc_kw}&hl=ko&gl=KR&ceid=KR:ko"
-    
-    try:
-        feed = feedparser.parse(rss_url)
-        for entry in feed.entries:
-            title = entry.get("title", "")
-            link = entry.get("link", "")
-            summary = entry.get("summary", "")
-            
-            pub_dt = datetime.now()
-            if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                from time import mktime
-                pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
+    for media_name, domain in TRACK_B_MEDIA.items():
+        enc_kw = quote(f"site:{domain} {keyword}")
+        rss_url = f"https://news.google.com/rss/search?q={enc_kw}&hl=ko&gl=KR&ceid=KR:ko"
+        
+        try:
+            feed = feedparser.parse(rss_url)
+            for entry in feed.entries[:5]:  # 최근 5개 기사 한정
+                title = entry.get("title", "")
+                link = entry.get("link", "")
+                summary = entry.get("summary", "")
+                
+                if " - " in title:
+                    title = title.rsplit(" - ", 1)[0]
 
-            if pub_dt < time_limit:
-                continue
+                pub_dt = datetime.now()
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    from time import mktime
+                    pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
 
-            media_name = "구글제휴매체"
-            if " - " in title:
-                parts = title.rsplit(" - ", 1)
-                title = parts[0]
-                media_name = parts[1]
+                if pub_dt < time_limit:
+                    continue
 
-            full_text = f"{title} {summary}"
-            if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
-                continue
+                full_text = f"{title} {summary}"
+                if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
+                    continue
 
-            matched_cat, matched_kw = classify_article_by_rules(full_text)
-            if matched_cat:
-                score = calculate_relevance_score(title, summary, matched_cat)
-                results.append({
-                    "선택": False,
-                    "연관도점수": score,
-                    "카테고리": matched_cat,
-                    "매체명": media_name,
-                    "검색키워드": matched_kw,
-                    "기사제목": title,
-                    "기사링크": link,
-                    "게재일": pub_dt.strftime('%m/%d'),
-                    "pub_dt": pub_dt
-                })
-    except Exception:
-        pass
+                matched_cat, matched_kw = classify_article_by_rules(full_text)
+                if matched_cat:
+                    score = calculate_relevance_score(title, summary, matched_cat)
+                    results.append({
+                        "선택": False,
+                        "연관도점수": score,
+                        "카테고리": matched_cat,
+                        "매체명": media_name,
+                        "검색키워드": matched_kw,
+                        "기사제목": title,
+                        "기사링크": link,
+                        "게재일": pub_dt.strftime('%m/%d'),
+                        "pub_dt": pub_dt
+                    })
+        except Exception:
+            pass
     return results
 
 # =========================================================
-# 🚀 전체 뉴스 통합 수집 및 자동 중복 정돈 함수
+# 📡 3. Track C: 직접 도메인 크롤링 (37개 전문지)
+# =========================================================
+def fetch_track_c_news(time_limit):
+    results = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
+    for media_name, target_url in TRACK_C_MEDIA.items():
+        try:
+            res = requests.get(target_url, headers=headers, timeout=4)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, 'html.parser')
+                # <a> 태그에서 제목과 링크 추출
+                links = soup.find_all('a', href=True)
+                
+                for a in links:
+                    title = a.get_text(strip=True)
+                    href = a['href']
+                    
+                    if len(title) < 10 or any(ignore in href for ignore in ["javascript", "login", "banner"]):
+                        continue
+
+                    full_url = href if href.startswith("http") else target_url.rstrip('/') + '/' + href.lstrip('/')
+                    
+                    # 키워드 매칭 체킹
+                    matched_cat, matched_kw = classify_article_by_rules(title)
+                    if matched_cat:
+                        score = calculate_relevance_score(title, "", matched_cat)
+                        results.append({
+                            "선택": False,
+                            "연관도점수": score,
+                            "카테고리": matched_cat,
+                            "매체명": media_name,
+                            "검색키워드": matched_kw,
+                            "기사제목": title,
+                            "기사링크": full_url,
+                            "게재일": datetime.now().strftime('%m/%d'),
+                            "pub_dt": datetime.now()
+                        })
+        except Exception:
+            pass
+    return results
+
+# =========================================================
+# 🚀 전문지 74개 통합 수집 엔진
 # =========================================================
 @st.cache_data(ttl=1800)
-def fetch_all_integrated_news():
+def fetch_all_trade_news():
     all_raw = []
     time_limit = datetime.now() - timedelta(hours=36)
     
-    # 카테고리 균형을 위해 대표 키워드 균등 수집
-    for kw in SEARCH_KEYWORDS:
-        all_raw.extend(fetch_naver_news(kw, time_limit))
-        all_raw.extend(fetch_google_news(kw, time_limit))
+    # 1. Track A (네이버 29개 전문지) 수집
+    for kw in SEARCH_KEYWORDS[:10]:
+        all_raw.extend(fetch_track_a_news(kw, time_limit))
         
+    # 2. Track B (구글 site: 8개 전문지) 수집
+    for kw in SEARCH_KEYWORDS[:6]:
+        all_raw.extend(fetch_track_b_news(kw, time_limit))
+        
+    # 3. Track C (직접 크롤링 37개 전문지) 수집
+    all_raw.extend(fetch_track_c_news(time_limit))
+
     df = pd.DataFrame(all_raw)
     if df.empty:
         return df
 
-    # 완전 동일 기사 중복 제거
+    # 중복 제거 (제목 기준)
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
-    # 과거 선택 학습 히스토리 가산점 부여
+    # 학습 히스토리 점수 가산
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
@@ -397,13 +456,13 @@ def save_selected_history(selected_df):
 # 💻 UI 메인 대시보드 화면
 # =========================================================
 if "news_df" not in st.session_state:
-    st.session_state["news_df"] = fetch_all_integrated_news()
+    st.session_state["news_df"] = fetch_all_trade_news()
 
 col_title, col_btn = st.columns([4, 1])
 with col_btn:
-    if st.button("🔄 실시간 뉴스 새로고침"):
+    if st.button("🔄 실시간 전문지 뉴스 새로고침"):
         st.cache_data.clear()
-        st.session_state["news_df"] = fetch_all_integrated_news()
+        st.session_state["news_df"] = fetch_all_trade_news()
         st.session_state.pop("analyzed_df", None)
         st.rerun()
 
@@ -418,12 +477,11 @@ if os.path.exists(HISTORY_FILE):
     except Exception:
         pass
 
-st.write(f"⚡ 최근 36시간 통합 포털 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
+st.write(f"⚡ 74개 전문지 타깃 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
 
 if not raw_df.empty:
-    if st.button("🎯 중요 기사 자동 선별하기 (유사 보도자료 중 대표 1건만 선별)", type="primary"):
+    if st.button("🎯 중요 기사 자동 선별하기 (대표 기사만 선택)", type="primary"):
         auto_df = raw_df.copy()
-        
         for cat in CATEGORIES_LIST:
             cat_df = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False)
             selected_indices = []
@@ -448,7 +506,7 @@ if not raw_df.empty:
             auto_df.loc[selected_indices, "선택"] = True
             
         st.session_state["analyzed_df"] = auto_df
-        st.success("스마트 대표 기사 선별 완료!")
+        st.success("대표 기사 자동 선별 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
@@ -516,10 +574,10 @@ if not raw_df.empty:
                 
                 html_body += f'<div style="margin-top:30px;padding-top:15px;border-top:1px solid #e2e8f0;font-size:12px;color:#666666;line-height:1.6;"><p style="font-weight:bold;color:#333333;margin:0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p><p style="margin:0;">이미규 | migyu.lee@roche.com</p><p style="margin:0;">김혜련 | hyeryeon.kim@roche.com</p><p style="margin:0 0 10px 0;">박수윤 | sue.park@roche.com</p><p style="color:#999999;margin:0;">© {now.year} Roche Korea Co.,Ltd</p></div></div>'
 
-                st.success("🎉 뉴스레터 생성이 완료되었습니다! (선택 데이터가 기록되었습니다)")
+                st.success("🎉 뉴스레터 생성이 완료되었습니다!")
                 st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
                 
-                st.markdown("### 📧 이메일 뉴스레터 완제품 (마우스 드래그 복사)")
+                st.markdown("### 📧 이메일 뉴스레터 완제품")
                 st.html(html_body)
                 
                 st.divider()
@@ -534,52 +592,12 @@ if not raw_df.empty:
 
 st.divider()
 
-# ★ 🧠 AI 학습 데이터 개별 / 전체 삭제 및 관리 센터 ★
-with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클릭하여 열기)", expanded=False):
+with st.expander("🧠 AI 학습용 데이터 관리 센터", expanded=False):
     if os.path.exists(HISTORY_FILE) and not history_df.empty:
-        st.write(f"현재 총 **{len(history_df)}건**의 선택 데이터가 누적 저장되어 있습니다.")
-        st.caption("💡 지우고 싶은 기사의 '삭제 선택 ✅' 칸에 체크한 뒤, 아래 [🗑️ 선택한 항목만 삭제] 버튼을 누르세요.")
-        
-        history_df_edit = history_df.copy()
-        history_df_edit.insert(0, "삭제 선택", False)
-        
-        edited_history = st.data_editor(
-            history_df_edit,
-            column_config={
-                "삭제 선택": st.column_config.CheckboxColumn("삭제 선택 ✅", default=False),
-                "기사링크": st.column_config.LinkColumn("기사링크")
-            },
-            disabled=["선택시각", "카테고리", "매체명", "기사제목", "기사링크", "검색키워드", "연관도점수", "게재일"],
-            hide_index=True,
-            use_container_width=True,
-            key="history_editor"
-        )
-        
-        col_del1, col_del2, col_del3 = st.columns([1, 1, 1])
-        
-        with col_del1:
-            if st.button("🗑️ 선택한 항목만 삭제", type="primary"):
-                to_keep = edited_history[edited_history["삭제 선택"] == False].drop(columns=["삭제 선택"])
-                if len(to_keep) < len(history_df):
-                    to_keep.to_csv(HISTORY_FILE, index=False, encoding='utf-8-sig')
-                    st.success("선택한 항목이 정상적으로 삭제되었습니다!")
-                    st.rerun()
-                else:
-                    st.warning("삭제할 항목이 선택되지 않았습니다.")
-
-        with col_del2:
-            csv_data = history_df.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label="💾 누적 데이터 CSV 다운로드",
-                data=csv_data,
-                file_name=f"Roche_History_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-            
-        with col_del3:
-            if st.button("🔥 학습 데이터 전체 초기화"):
-                os.remove(HISTORY_FILE)
-                st.success("모든 히스토리 데이터가 초기화되었습니다!")
-                st.rerun()
+        st.write(f"현재 총 **{len(history_df)}건**의 선택 데이터가 저장되어 있습니다.")
+        if st.button("🔥 학습 데이터 전체 초기화"):
+            os.remove(HISTORY_FILE)
+            st.success("모든 히스토리 데이터가 초기화되었습니다!")
+            st.rerun()
     else:
-        st.info("현재 축적된 AI 학습 데이터가 없습니다. 뉴스레터를 생성하면 선택된 기사가 여기에 저장됩니다.")
+        st.info("현재 축적된 AI 학습 데이터가 없습니다.")
