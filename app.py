@@ -1,3 +1,18 @@
+네, 담당자님! 유사한 어뷰징/보도자료 기사들을 깔끔하게 접고 펼칠 수 있는 아코디언(Accordion, st.expander) 형태로 묶어서 표시하도록 Streamlit 화면을 구현할 수 있습니다!
+
+이렇게 설정하면 메인 화면에는 대표 기사 1건만 노출되고, 그 아래에 "▶ 관련 기사 N건 더보기" 접이식 블록이 생성되어 클릭 시 동일한 보도자료 기사들이 펼쳐집니다. 대시보드 피드가 훨씬 깔끔해집니다.
+
+💡 작동 원리 (클러스터링 & 아코디언)
+자카드 유사도(Jaccard Similarity) 기반 그룹핑: 기사 제목 유사도가 40% 이상인 기사들을 하나의 "유사 기사 그룹"으로 자동으로 묶습니다.
+
+대표 기사 자동 선정: 그룹 내에서 연관도 점수가 가장 높은 1건(또는 1순위 매체 기사)을 대표 기사로 메인에 노출합니다.
+
+st.expander 적용: 나머지 동일/유사 기사들은 대표 기사 바로 아래의 접이식 메뉴 안으로 넣어 필요할 때만 클릭해서 열어볼 수 있게 구성합니다.
+
+💻 app.py 전량 교체 코드
+아래 전체 코드를 복사하셔서 GitHub의 app.py 파일에 그대로 덮어쓰기(Commit changes)해 주세요!
+
+Python
 import streamlit as st
 import pandas as pd
 import requests
@@ -85,7 +100,6 @@ def calculate_jaccard_similarity(str1, str2):
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
-# 💡 언론사 도메인/링크 파싱 정밀 로직
 def identify_media_name(link, original_link=""):
     target_link = original_link if original_link else link
     domain = urlparse(target_link).netloc.lower()
@@ -167,34 +181,25 @@ def classify_article_by_rules(text):
 
     return None, None
 
-# =========================================================
-# 🎯 스코어링 엔진 (주요 29개 전문지 +5점 최상단 노출)
-# =========================================================
 def calculate_relevance_score(title, summary, media_name):
-    score = 5  # 기본 5점 시작
+    score = 5
     full_text = f"{title} {summary}"
 
-    # 🚫 강력 감점
     if re.search(r"컬럼비아\s*대|컬럼비아대|columbia\s*univ", full_text, re.I):
         return 1
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "식습관"]):
         return 1
 
-    # 🏆 주요 전문지 우선 순위 보장 (+5점 가점)
     if media_name in PRIORITY_TRADE_MEDIA:
         score += 5
     else:
-        score -= 2  # 일반지/기타 매체 하순위배치
+        score -= 2
 
-    # 로슈 및 핵심 제품명 제목 노출 가점
     if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "약가", "급여", "암질심", "약평위"]):
         score += 1
 
     return max(1, min(score, 10))
 
-# =========================================================
-# 📡 네이버 뉴스 API 핵심 수집 엔진
-# =========================================================
 def fetch_naver_news(keyword, time_limit):
     results = []
     headers = {
@@ -248,9 +253,6 @@ def fetch_naver_news(keyword, time_limit):
         pass
     return results
 
-# =========================================================
-# 🚀 전체 뉴스 통합 수집 및 자동 중복 정돈
-# =========================================================
 @st.cache_data(ttl=1800)
 def fetch_all_integrated_news():
     all_raw = []
@@ -263,10 +265,10 @@ def fetch_all_integrated_news():
     if df.empty:
         return df
 
-    # 완전 동일 기사 중복 제거 (제목 기준)
+    # 완전 동일 기사 1차 제거
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
-    # 히스토리 가산점 반영
+    # 학습 히스토리 가산점
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
@@ -280,9 +282,42 @@ def fetch_all_integrated_news():
         except Exception:
             pass
 
-    # 연관도점수 내림차순 ➔ 주요 1순위 전문지 기사 최상단 정렬
     df = df.sort_values(by=["연관도점수", "pub_dt"], ascending=[False, False]).drop(columns=["pub_dt"])
     return df
+
+# =========================================================
+# 🧩 유사 기사 클러스터링 함수 (아코디언용)
+# =========================================================
+def group_similar_articles(df, sim_threshold=0.38):
+    clusters = []
+    visited = set()
+    rows = df.to_dict('records')
+
+    for i in range(len(rows)):
+        if i in visited:
+            continue
+
+        main_art = rows[i]
+        cluster = {
+            "representative": main_art,
+            "similars": []
+        }
+        visited.add(i)
+
+        for j in range(i + 1, len(rows)):
+            if j in visited:
+                continue
+            
+            comp_art = rows[j]
+            # 카테고리가 동일하고 제목 유사도가 0.38 이상이면 같은 그룹
+            if main_art["카테고리"] == comp_art["카테고리"]:
+                sim = calculate_jaccard_similarity(main_art["기사제목"], comp_art["기사제목"])
+                if sim >= sim_threshold:
+                    cluster["similars"].append(comp_art)
+                    visited.add(j)
+
+        clusters.append(cluster)
+    return clusters
 
 def save_selected_history(selected_df):
     try:
@@ -307,7 +342,7 @@ with col_btn:
     if st.button("🔄 실시간 뉴스 새로고침"):
         st.cache_data.clear()
         st.session_state["news_df"] = fetch_all_integrated_news()
-        st.session_state.pop("analyzed_df", None)
+        st.session_state.pop("selected_links", None)
         st.rerun()
 
 raw_df = st.session_state["news_df"]
@@ -323,116 +358,119 @@ if os.path.exists(HISTORY_FILE):
 
 st.write(f"⚡ 최근 36시간 네이버 포털 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
 
-if not raw_df.empty:
-    if st.button("🎯 중요 기사 자동 선별하기 (주요 전문지 우선 선별)", type="primary"):
-        auto_df = raw_df.copy()
-        for cat in CATEGORIES_LIST:
-            cat_df = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False)
-            selected_indices = []
-            selected_titles = []
-            
-            for idx, row in cat_df.iterrows():
-                title = row["기사제목"]
-                is_duplicate = False
-                for s_title in selected_titles:
-                    sim = calculate_jaccard_similarity(title, s_title)
-                    if sim > 0.4:
-                        is_duplicate = True
-                        break
-                
-                if not is_duplicate:
-                    selected_indices.append(idx)
-                    selected_titles.append(title)
-                
-                if len(selected_indices) >= 5:
-                    break
-            
-            auto_df.loc[selected_indices, "선택"] = True
-            
-        st.session_state["analyzed_df"] = auto_df
-        st.success("주요 전문지 1순위 대표 기사 자동 선별 완료!")
+if "selected_links" not in st.session_state:
+    st.session_state["selected_links"] = set()
 
-    display_df = st.session_state.get("analyzed_df", raw_df)
+if not raw_df.empty:
+    # 유사 기사 그룹화 수행
+    clusters = group_similar_articles(raw_df)
+
+    if st.button("🎯 중요 대표 기사 자동 선별하기 (카테고리별 상위 기사 자동 체크)", type="primary"):
+        auto_selected = set()
+        for cat in CATEGORIES_LIST:
+            cat_clusters = [c for c in clusters if c["representative"]["카테고리"] == cat]
+            for c in cat_clusters[:5]:  # 카테고리별 상위 5개 그룹 대표기사
+                auto_selected.add(c["representative"]["기사링크"])
+        st.session_state["selected_links"] = auto_selected
+        st.success("대표 기사 자동 체크 완료!")
+
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
-    
-    all_edited_dfs = []
     
     for i, cat in enumerate(CATEGORIES_LIST):
         with tabs[i]:
-            cat_df = display_df[display_df["카테고리"] == cat].copy()
-            st.markdown(f"### {cat} ({len(cat_df)}건)")
+            cat_clusters = [c for c in clusters if c["representative"]["카테고리"] == cat]
+            st.markdown(f"### {cat} (대표기사 {len(cat_clusters)}그룹)")
             
-            if not cat_df.empty:
-                edited = st.data_editor(
-                    cat_df,
-                    column_config={
-                        "선택": st.column_config.CheckboxColumn("선택 ✅", default=False),
-                        "카테고리": st.column_config.SelectboxColumn(
-                            "카테고리 🔄",
-                            options=CATEGORIES_LIST,
-                            required=True
-                        ),
-                        "연관도점수": st.column_config.NumberColumn("연관도 🎯"),
-                        "기사링크": st.column_config.LinkColumn("기사링크")
-                    },
-                    disabled=["연관도점수", "매체명", "검색키워드", "기사제목", "기사링크", "게재일"],
-                    hide_index=True,
-                    use_container_width=True,
-                    key=f"editor_{cat}"
-                )
-                all_edited_dfs.append(edited)
+            if cat_clusters:
+                for idx, c in enumerate(cat_clusters):
+                    rep = c["representative"]
+                    sims = c["similars"]
+                    link = rep["기사링크"]
+
+                    col_chk, col_content = st.columns([0.6, 9.4])
+                    
+                    with col_chk:
+                        is_checked = link in st.session_state["selected_links"]
+                        chk = st.checkbox("", value=is_checked, key=f"chk_{cat}_{idx}_{link}")
+                        if chk:
+                            st.session_state["selected_links"].add(link)
+                        else:
+                            st.session_state["selected_links"].discard(link)
+
+                    with col_content:
+                        # 대표 기사 노출
+                        st.markdown(f"🎯 **[{rep['연관도점수']}점] [{rep['매체명']}]** [{rep['기사제목']}]({rep['기사링크']}) `({rep['게재일']})`")
+
+                        # 🔻 유사 보도자료 아코디언 접이식 메뉴
+                        if sims:
+                            with st.expander(f"📁 관련 보도자료/유사 기사 {len(sims)}건 더보기"):
+                                for sim_art in sims:
+                                    s_link = sim_art["기사링크"]
+                                    s_chk_val = s_link in st.session_state["selected_links"]
+                                    
+                                    col_s_chk, col_s_txt = st.columns([0.6, 9.4])
+                                    with col_s_chk:
+                                        s_chk = st.checkbox("", value=s_chk_val, key=f"s_chk_{cat}_{idx}_{s_link}")
+                                        if s_chk:
+                                            st.session_state["selected_links"].add(s_link)
+                                        else:
+                                            st.session_state["selected_links"].discard(s_link)
+                                    with col_s_txt:
+                                        st.markdown(f"• **[{sim_art['매체명']}]** [{sim_art['기사제목']}]({sim_art['기사링크']}) `({sim_art['게재일']})`")
+                    st.write("")
             else:
                 st.info(f"현재 {cat} 관련 최신 기사가 없습니다.")
 
     st.divider()
 
-    if all_edited_dfs:
-        full_edited_df = pd.concat(all_edited_dfs, ignore_index=True)
-        selected_df = full_edited_df[full_edited_df["선택"] == True]
-        
-        st.subheader(f"✅ 현재 총 **{len(selected_df)}건**의 기사가 선택되었습니다.")
-        
-        if st.button("🚀 선택한 기사로 뉴스레터 생성하기"):
-            if not selected_df.empty:
-                save_selected_history(selected_df)
+    # 선택된 기사 수 집계
+    selected_count = len(st.session_state["selected_links"])
+    st.subheader(f"✅ 현재 총 **{selected_count}건**의 기사가 선택되었습니다.")
+    
+    if st.button("🚀 선택한 기사로 뉴스레터 생성하기"):
+        if selected_count > 0:
+            # 선택된 기사 DataFrame 가공
+            selected_rows = raw_df[raw_df["기사링크"].isin(st.session_state["selected_links"])].copy()
+            selected_rows["선택"] = True
+            save_selected_history(selected_rows)
+            
+            now = datetime.now()
+            title_date_str = now.strftime('%b %d')
+            header_date_str = now.strftime('%d %B, %Y')
+            
+            html_body = f'<div style="font-family:\'Segoe UI\',Arial,sans-serif;max-width:680px;color:#333333;line-height:1.5;border:1px solid #e2e8f0;padding:25px;border-radius:8px;background-color:#ffffff;">'
+            html_body += f'<div style="border-bottom:2px solid #0066CC;padding-bottom:12px;margin-bottom:20px;"><table style="width:100%;border-collapse:collapse;"><tr><td style="font-size:24px;font-weight:bold;color:#0066CC;">Roche Daily News Highlights</td><td style="text-align:right;font-size:14px;color:#666666;vertical-align:bottom;">{header_date_str}</td></tr></table></div>'
+            html_body += f'<div style="font-size:20px;font-weight:bold;color:#222222;margin-bottom:18px;letter-spacing:0.5px;">NEWS</div>'
+            
+            for cat in CATEGORIES_LIST:
+                cat_df = selected_rows[selected_rows["카테고리"] == cat]
+                html_body += f'<div style="margin-bottom:22px;"><div style="font-size:15px;font-weight:bold;color:#0066CC;margin-bottom:8px;border-bottom:1px dashed #cbd5e1;padding-bottom:4px;">{cat}</div><ul style="margin:0;padding-left:18px;font-size:14px;color:#333333;">'
                 
-                now = datetime.now()
-                title_date_str = now.strftime('%b %d')
-                header_date_str = now.strftime('%d %B, %Y')
+                if not cat_df.empty:
+                    for _, r in cat_df.iterrows():
+                        html_body += f'<li style="margin-bottom:6px;"><a href="{r["기사링크"]}" target="_blank" style="color:#1a0dab;text-decoration:underline;font-weight:500;">{r["기사제목"]}</a> <span style="color:#666666;font-size:13px;">({r["매체명"]} {r["게재일"]})</span></li>'
+                else:
+                    html_body += f'<li style="color:#888888;list-style-type:none;margin-left:-18px;">(관련 주요 기사 없음)</li>'
                 
-                html_body = f'<div style="font-family:\'Segoe UI\',Arial,sans-serif;max-width:680px;color:#333333;line-height:1.5;border:1px solid #e2e8f0;padding:25px;border-radius:8px;background-color:#ffffff;">'
-                html_body += f'<div style="border-bottom:2px solid #0066CC;padding-bottom:12px;margin-bottom:20px;"><table style="width:100%;border-collapse:collapse;"><tr><td style="font-size:24px;font-weight:bold;color:#0066CC;">Roche Daily News Highlights</td><td style="text-align:right;font-size:14px;color:#666666;vertical-align:bottom;">{header_date_str}</td></tr></table></div>'
-                html_body += f'<div style="font-size:20px;font-weight:bold;color:#222222;margin-bottom:18px;letter-spacing:0.5px;">NEWS</div>'
-                
-                for cat in CATEGORIES_LIST:
-                    cat_df = selected_df[selected_df["카테고리"] == cat]
-                    html_body += f'<div style="margin-bottom:22px;"><div style="font-size:15px;font-weight:bold;color:#0066CC;margin-bottom:8px;border-bottom:1px dashed #cbd5e1;padding-bottom:4px;">{cat}</div><ul style="margin:0;padding-left:18px;font-size:14px;color:#333333;">'
-                    
-                    if not cat_df.empty:
-                        for _, r in cat_df.iterrows():
-                            html_body += f'<li style="margin-bottom:6px;"><a href="{r["기사링크"]}" target="_blank" style="color:#1a0dab;text-decoration:underline;font-weight:500;">{r["기사제목"]}</a> <span style="color:#666666;font-size:13px;">({r["매체명"]} {r["게재일"]})</span></li>'
-                    else:
-                        html_body += f'<li style="color:#888888;list-style-type:none;margin-left:-18px;">(관련 주요 기사 없음)</li>'
-                    
-                    html_body += f'</ul></div>'
-                
-                html_body += f'<div style="margin-top:30px;padding-top:15px;border-top:1px solid #e2e8f0;font-size:12px;color:#666666;line-height:1.6;"><p style="font-weight:bold;color:#333333;margin:0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p><p style="margin:0;">이미규 | migyu.lee@roche.com</p><p style="margin:0;">김혜련 | hyeryeon.kim@roche.com</p><p style="margin:0 0 10px 0;">박수윤 | sue.park@roche.com</p><p style="color:#999999;margin:0;">© {now.year} Roche Korea Co.,Ltd</p></div></div>'
+                html_body += f'</ul></div>'
+            
+            html_body += f'<div style="margin-top:30px;padding-top:15px;border-top:1px solid #e2e8f0;font-size:12px;color:#666666;line-height:1.6;"><p style="font-weight:bold;color:#333333;margin:0 0 4px 0;">[한국로슈 Communications & Public Affairs Chapter]</p><p style="margin:0;">이미규 | migyu.lee@roche.com</p><p style="margin:0;">김혜련 | hyeryeon.kim@roche.com</p><p style="margin:0 0 10px 0;">박수윤 | sue.park@roche.com</p><p style="color:#999999;margin:0;">© {now.year} Roche Korea Co.,Ltd</p></div></div>'
 
-                st.success("🎉 뉴스레터 생성이 완료되었습니다!")
-                st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
-                
-                st.markdown("### 📧 이메일 뉴스레터 완제품")
-                st.html(html_body)
-                
-                st.divider()
-                st.download_button(
-                    label="💾 이메일용 HTML 파일 다운로드",
-                    data=html_body,
-                    file_name=f"Roche_News_{now.strftime('%Y%m%d')}.html",
-                    mime="text/html"
-                )
-            else:
-                st.warning("선택된 기사가 없습니다.")
+            st.success("🎉 아코디언에서 포함하여 선택하신 모든 기사로 뉴스레터 생성이 완료되었습니다!")
+            st.info(f"📌 **메일 제목:** [Roche] Daily News Monitoring {title_date_str}")
+            
+            st.markdown("### 📧 이메일 뉴스레터 완제품")
+            st.html(html_body)
+            
+            st.divider()
+            st.download_button(
+                label="💾 이메일용 HTML 파일 다운로드",
+                data=html_body,
+                file_name=f"Roche_News_{now.strftime('%Y%m%d')}.html",
+                mime="text/html"
+            )
+        else:
+            st.warning("선택된 기사가 없습니다. 기사를 하나 이상 체크해 주세요.")
 
 st.divider()
 
