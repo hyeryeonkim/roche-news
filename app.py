@@ -21,7 +21,6 @@ CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "In
 # =========================================================
 # 🎯 74개 전문지 마스터 라인업 정의
 # =========================================================
-# Track A: 네이버 제휴 전문지 29개
 TRACK_A_MEDIA = [
     "데일리팜", "청년의사", "데일리메디", "메디칼타임즈", "메디칼업저버", "메디파나뉴스", "팜뉴스", 
     "의약뉴스", "의협신문", "의학신문", "KBR", "코리아헬스로그", "히트뉴스", "메디게이트뉴스", 
@@ -30,7 +29,6 @@ TRACK_A_MEDIA = [
     "보건신문", "메디컬투데이", "메디코파마"
 ]
 
-# Track B: 구글 우회 제휴 전문지 8개 (매체명: 타깃 도메인)
 TRACK_B_MEDIA = {
     "뉴스더보이스": "newsthevoice.com",
     "메디포뉴스": "medifonews.com",
@@ -42,7 +40,6 @@ TRACK_B_MEDIA = {
     "팍스메디컬뉴스": "paxmedicalnews.com"
 }
 
-# Track C: 직접 크롤링 전문지 37개 (매체명: 사이트 URL)
 TRACK_C_MEDIA = {
     "병원신문": "http://www.khanews.com",
     "의사신문": "http://www.doctorstimes.com",
@@ -81,7 +78,7 @@ TRACK_C_MEDIA = {
 }
 
 # =========================================================
-# 🎯 키워드 세트 정의
+# 🎯 수집 및 분류 키워드
 # =========================================================
 SEARCH_KEYWORDS = [
     "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
@@ -136,8 +133,10 @@ def calculate_jaccard_similarity(str1, str2):
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
-def identify_media_name(link, default_name="전문지"):
-    domain = urlparse(link).netloc.lower()
+# 💡 언론사 도메인/링크 파싱 정밀 로직
+def identify_media_name(link, original_link=""):
+    target_link = original_link if original_link else link
+    domain = urlparse(target_link).netloc.lower()
     
     mapping = {
         "dailypharm.com": "데일리팜",
@@ -174,7 +173,10 @@ def identify_media_name(link, default_name="전문지"):
     for d, name in mapping.items():
         if d in domain:
             return name
-    return default_name
+            
+    # 네이버 제휴 매체 fallback
+    cleaned = domain.replace("www.", "").replace("m.", "").split(".")[0].capitalize()
+    return cleaned if cleaned else "주요전문지"
 
 def classify_article_by_rules(text):
     text_lower = text.lower()
@@ -201,52 +203,34 @@ def classify_article_by_rules(text):
 
     return None, None
 
-def calculate_relevance_score(title, summary, category):
+# =========================================================
+# 🎯 매체 트랙별 점수 차등 정책 (Track A: +5점 / Track B, C: -3점)
+# =========================================================
+def calculate_relevance_score_by_track(title, summary, track_type):
+    # 기본 5점 시작
+    score = 5
+
+    # 🚫 노이즈 강력 감점
     full_text = f"{title} {summary}"
-    score = 1
-
-    if re.search(r"컬럼비아\s*대|컬럼비아대|컬럼비아\s*대학교|columbia\s*univ", full_text, re.I):
+    if re.search(r"컬럼비아\s*대|컬럼비아대|columbia\s*univ", full_text, re.I):
         return 1
-    if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "자가진단", "식습관"]):
+    if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "식습관"]):
         return 1
 
-    if category == "Corporate News":
-        score += 3
-        if any(k in full_text for k in ["로슈", "Roche", "한국로슈"]): score += 3
+    # 🏆 [수집 채널별 점수 차등 적용]
+    if track_type == "Track A":
+        score += 3  # 네이버 주요 제휴 전문지 (1순위 상단 노출)
+    elif track_type in ["Track B", "Track C"]:
+        score -= 3  # 구글/직접 크롤링 매체 (하순위 배치)
 
-    elif category == "Product News":
-        score += 2
-        if any(core in full_text for core in ["티쎈트릭", "바비스모", "에브리스디", "엔스프링", "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"]):
-            score += 3
-
-    elif category == "Disease/ Market News":
-        score += 2
-        combo_matched = False
-        if any(p in full_text for p in ["졸겐스마", "스핀라자", "오나셈노진", "뉴시너센"]) and any(d in full_text for d in ["척수성근위축증", "SMA", "신경근육"]):
-            score += 4; combo_matched = True
-        elif any(p in full_text for p in ["울토미리스", "업리즈나", "티사브리", "렘트라다"]) and any(d in full_text for d in ["시신경척수염", "NMOSD", "다발성경화증"]):
-            score += 4; combo_matched = True
-        elif any(p in full_text for p in ["아일리아", "비오뷰", "루센티스", "아필리부"]) and any(d in full_text for d in ["황반변성", "황반부종", "DME", "nAMD"]):
-            score += 4; combo_matched = True
-        elif any(p in full_text for p in ["킴리아", "예스카타", "엡킨리"]) and any(d in full_text for d in ["DLBCL", "소포성림프종", "혈액암"]):
-            score += 4; combo_matched = True
-        elif "엔허투" in full_text and re.search(r"유방암|HER2|HER2양성", full_text, re.I):
-            score += 4; combo_matched = True
-
-        if combo_matched and any(evt in full_text for evt in ["급여", "임상", "3상", "허가", "FDA", "약평위", "암질심"]):
-            score += 1
-
-    elif category == "Industry/ Policy News":
-        score += 3
-        if any(p in full_text for p in ["약가인하", "약가협상", "약가제도", "위험분담제", "RSA", "경평면제", "급여재평가", "사용량-약가연동"]): score += 3
-
-    if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "알레센자", "페스코", "약가", "급여", "암질심", "약평위"]):
-        score += 2
+    # 직접 언급 가점
+    if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "약가", "급여", "암질심", "약평위"]):
+        score += 1
 
     return max(1, min(score, 10))
 
 # =========================================================
-# 📡 1. Track A: 네이버 API 전용 수집 (29개 전문지 필터링)
+# 📡 1. Track A: 네이버 API 수집 (Priority 1)
 # =========================================================
 def fetch_track_a_news(keyword, time_limit):
     results = []
@@ -255,7 +239,7 @@ def fetch_track_a_news(keyword, time_limit):
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     enc_kw = quote(keyword)
-    url = f"https://openapi.naver.com/v1/search/news.json?query={enc_kw}&display=50&sort=date"
+    url = f"https://openapi.naver.com/v1/search/news.json?query={enc_kw}&display=100&sort=date"
     
     try:
         res = requests.get(url, headers=headers, timeout=5)
@@ -264,7 +248,8 @@ def fetch_track_a_news(keyword, time_limit):
             for item in items:
                 title = re.sub(r'<[^>]+>', '', item.get("title", ""))
                 summary = re.sub(r'<[^>]+>', '', item.get("description", ""))
-                link = item.get("originallink", item.get("link", ""))
+                link = item.get("link", "")
+                origin_link = item.get("originallink", "")
                 
                 pub_date_raw = item.get("pubDate", "")
                 pub_dt = datetime.now()
@@ -276,9 +261,7 @@ def fetch_track_a_news(keyword, time_limit):
                 if pub_dt < time_limit:
                     continue
 
-                media_name = identify_media_name(link)
-                if media_name not in TRACK_A_MEDIA:
-                    continue
+                media_name = identify_media_name(link, origin_link)
 
                 full_text = f"{title} {summary}"
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
@@ -286,7 +269,7 @@ def fetch_track_a_news(keyword, time_limit):
 
                 matched_cat, matched_kw = classify_article_by_rules(full_text)
                 if matched_cat:
-                    score = calculate_relevance_score(title, summary, matched_cat)
+                    score = calculate_relevance_score_by_track(title, summary, "Track A")
                     results.append({
                         "선택": False,
                         "연관도점수": score,
@@ -294,7 +277,7 @@ def fetch_track_a_news(keyword, time_limit):
                         "매체명": media_name,
                         "검색키워드": matched_kw,
                         "기사제목": title,
-                        "기사링크": link,
+                        "기사링크": origin_link if origin_link else link,
                         "게재일": pub_dt.strftime('%m/%d'),
                         "pub_dt": pub_dt
                     })
@@ -303,7 +286,7 @@ def fetch_track_a_news(keyword, time_limit):
     return results
 
 # =========================================================
-# 📡 2. Track B: 구글 뉴스 site: 우회 수집 (8개 전문지)
+# 📡 2. Track B: 구글 뉴스 site: 우회 수집
 # =========================================================
 def fetch_track_b_news(keyword, time_limit):
     results = []
@@ -335,7 +318,7 @@ def fetch_track_b_news(keyword, time_limit):
 
                 matched_cat, matched_kw = classify_article_by_rules(full_text)
                 if matched_cat:
-                    score = calculate_relevance_score(title, summary, matched_cat)
+                    score = calculate_relevance_score_by_track(title, summary, "Track B")
                     results.append({
                         "선택": False,
                         "연관도점수": score,
@@ -352,7 +335,7 @@ def fetch_track_b_news(keyword, time_limit):
     return results
 
 # =========================================================
-# 📡 3. Track C: 정규식 기반 직접 도메인 크롤링 (37개 전문지)
+# 📡 3. Track C: 정규식 기반 직접 도메인 크롤링
 # =========================================================
 def fetch_track_c_news(time_limit):
     results = []
@@ -360,10 +343,9 @@ def fetch_track_c_news(time_limit):
 
     for media_name, target_url in TRACK_C_MEDIA.items():
         try:
-            res = requests.get(target_url, headers=headers, timeout=4)
+            res = requests.get(target_url, headers=headers, timeout=3)
             if res.status_code == 200:
                 html_text = res.text
-                # 정규식으로 <a> 태그 내 링크 및 제목 추출 (bs4 패키지 무의존)
                 pattern = r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
                 matches = re.findall(pattern, html_text, re.IGNORECASE | re.DOTALL)
                 
@@ -378,7 +360,7 @@ def fetch_track_c_news(time_limit):
                     
                     matched_cat, matched_kw = classify_article_by_rules(title)
                     if matched_cat:
-                        score = calculate_relevance_score(title, "", matched_cat)
+                        score = calculate_relevance_score_by_track(title, "", "Track C")
                         results.append({
                             "선택": False,
                             "연관도점수": score,
@@ -402,20 +384,25 @@ def fetch_all_trade_news():
     all_raw = []
     time_limit = datetime.now() - timedelta(hours=36)
     
-    for kw in SEARCH_KEYWORDS[:10]:
+    # 1. Track A (네이버 API 수집 - Priority 1) 전체 수집
+    for kw in SEARCH_KEYWORDS:
         all_raw.extend(fetch_track_a_news(kw, time_limit))
         
-    for kw in SEARCH_KEYWORDS[:6]:
+    # 2. Track B (구글 site:) 보완 수집
+    for kw in SEARCH_KEYWORDS[:10]:
         all_raw.extend(fetch_track_b_news(kw, time_limit))
         
+    # 3. Track C (직접 크롤링) 보완 수집
     all_raw.extend(fetch_track_c_news(time_limit))
 
     df = pd.DataFrame(all_raw)
     if df.empty:
         return df
 
+    # 완전 동일 기사 중복 제거
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
+    # 학습 히스토리 점수 가산
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
@@ -429,6 +416,7 @@ def fetch_all_trade_news():
         except Exception:
             pass
 
+    # 연관도 점수 순(내림차순) 및 게재일 순 정렬
     df = df.sort_values(by=["연관도점수", "pub_dt"], ascending=[False, False]).drop(columns=["pub_dt"])
     return df
 
@@ -469,10 +457,10 @@ if os.path.exists(HISTORY_FILE):
     except Exception:
         pass
 
-st.write(f"⚡ 74개 전문지 타깃 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
+st.write(f"⚡ 최근 36시간 통합 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
 
 if not raw_df.empty:
-    if st.button("🎯 중요 기사 자동 선별하기 (대표 기사만 선택)", type="primary"):
+    if st.button("🎯 중요 기사 자동 선별하기 (주요 매체 우선 선별)", type="primary"):
         auto_df = raw_df.copy()
         for cat in CATEGORIES_LIST:
             cat_df = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False)
@@ -498,7 +486,7 @@ if not raw_df.empty:
             auto_df.loc[selected_indices, "선택"] = True
             
         st.session_state["analyzed_df"] = auto_df
-        st.success("대표 기사 자동 선별 완료!")
+        st.success("네이버 1순위 주요 매체 우선 자동 선별 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
