@@ -12,15 +12,27 @@ st.title("📰 한국로슈 3대 포털(네이버/다음/구글) 통합 News Mon
 
 HISTORY_FILE = "selected_articles_history.csv"
 
-# 네이버 Open API 인증키
 NAVER_CLIENT_ID = "rdVf0JWe0wNFXCFrPKjI"
 NAVER_CLIENT_SECRET = "cxR2cC5hmC"
 
 CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
 
 # =========================================================
-# 🎯 수집 및 분류 키워드 정의
+# 🎯 로슈 핵심 브랜드 / 제품 리스트 (제목 노출 시 최상단 배치)
 # =========================================================
+CORE_ROCHE_BRANDS = [
+    "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
+    "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"
+]
+
+PRIORITY_TRADE_MEDIA = [
+    "데일리팜", "청년의사", "데일리메디", "메디칼타임즈", "메디칼업저버", "메디파나뉴스", "팜뉴스", 
+    "의약뉴스", "의협신문", "의학신문", "KBR", "코리아헬스로그", "히트뉴스", "메디게이트뉴스", 
+    "메디소비자뉴스", "코메디닷컴", "메디팜스투데이", "약사공론", "e-의료정보", "메디칼트리뷴", 
+    "라포르시안", "후생신보", "약업신문", "더바이오", "바이오스펙테이터", "메디컬월드뉴스", 
+    "보건신문", "메디컬투데이", "메디코파마"
+]
+
 SEARCH_KEYWORDS = [
     "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
     "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비",
@@ -124,7 +136,8 @@ def classify_article_by_rules(text):
 
     return None, None
 
-def calculate_relevance_score(title, summary, source_portal):
+# 💡 스코어링 로직 강화 (로슈 제품명 제목 노출 시 무조건 최상위 가점)
+def calculate_relevance_score(title, summary, source_portal, media_name):
     score = 5
     full_text = f"{title} {summary}"
 
@@ -133,18 +146,20 @@ def calculate_relevance_score(title, summary, source_portal):
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "식습관"]):
         return 1
 
-    # 네이버 수집 기사는 우선순위 가점 (+3점)
-    if source_portal == "네이버":
+    # 🏆 1. 로슈/핵심 제품명이 제목에 있는 경우 (+5점 최우선 가점)
+    if any(brand.lower() in title.lower() for brand in CORE_ROCHE_BRANDS):
+        score += 5
+
+    # 🏆 2. 주요 전문지 매체 가점 (+3점)
+    if media_name in PRIORITY_TRADE_MEDIA:
         score += 3
 
-    if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "약가", "급여", "암질심", "약평위"]):
+    # 🏆 3. 네이버 수집 기사 가점 (+2점)
+    if source_portal == "네이버":
         score += 2
 
     return max(1, min(score, 10))
 
-# =========================================================
-# 📡 1. 네이버 뉴스 API 수집 (Priority 1)
-# =========================================================
 def fetch_naver_news(keyword, time_limit):
     results = []
     headers = {
@@ -181,7 +196,7 @@ def fetch_naver_news(keyword, time_limit):
 
                 matched_cat, matched_kw = classify_article_by_rules(full_text)
                 if matched_cat:
-                    score = calculate_relevance_score(title, summary, "네이버")
+                    score = calculate_relevance_score(title, summary, "네이버", media_name)
                     results.append({
                         "선택": False,
                         "연관도점수": score,
@@ -198,9 +213,6 @@ def fetch_naver_news(keyword, time_limit):
         pass
     return results
 
-# =========================================================
-# 📡 2. 다음 뉴스 RSS 수집
-# =========================================================
 def fetch_daum_news(keyword, time_limit):
     results = []
     enc_kw = quote(keyword)
@@ -228,7 +240,7 @@ def fetch_daum_news(keyword, time_limit):
 
             matched_cat, matched_kw = classify_article_by_rules(full_text)
             if matched_cat:
-                score = calculate_relevance_score(title, summary, "다음")
+                score = calculate_relevance_score(title, summary, "다음", media_name)
                 results.append({
                     "선택": False,
                     "연관도점수": score,
@@ -245,9 +257,6 @@ def fetch_daum_news(keyword, time_limit):
         pass
     return results
 
-# =========================================================
-# 📡 3. 구글 뉴스 RSS 수집
-# =========================================================
 def fetch_google_news(keyword, time_limit):
     results = []
     enc_kw = quote(keyword)
@@ -278,7 +287,7 @@ def fetch_google_news(keyword, time_limit):
 
             matched_cat, matched_kw = classify_article_by_rules(full_text)
             if matched_cat:
-                score = calculate_relevance_score(title, summary, "구글")
+                score = calculate_relevance_score(title, summary, "구글", media_name)
                 results.append({
                     "선택": False,
                     "연관도점수": score,
@@ -295,23 +304,17 @@ def fetch_google_news(keyword, time_limit):
         pass
     return results
 
-# =========================================================
-# 🚀 3대 포털 통합 수집 & 네이버 우선 중복 정돈
-# =========================================================
 @st.cache_data(ttl=1800)
 def fetch_all_integrated_news():
     all_raw = []
     time_limit = datetime.now() - timedelta(hours=36)
     
-    # 1. 네이버 뉴스 API 수집 (Priority 1)
     for kw in SEARCH_KEYWORDS:
         all_raw.extend(fetch_naver_news(kw, time_limit))
         
-    # 2. 다음 뉴스 보완 수집
     for kw in SEARCH_KEYWORDS[:12]:
         all_raw.extend(fetch_daum_news(kw, time_limit))
 
-    # 3. 구글 뉴스 보완 수집
     for kw in SEARCH_KEYWORDS[:12]:
         all_raw.extend(fetch_google_news(kw, time_limit))
 
@@ -319,11 +322,11 @@ def fetch_all_integrated_news():
     if df.empty:
         return df
 
-    # 네이버 수집 기사를 상단으로 1차 정렬 후 제목 중복 제거 (네이버 기사 남김)
+    # 네이버 기사 우선순위 정렬 후 중복 제거
     df = df.sort_values(by=["출처포털", "연관도점수", "pub_dt"], ascending=[False, False, False])
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
-    # 유사 보도자료 중복 축약 (네이버 기준 대표 기사 1건 보존)
+    # 유사 보도자료 중복 축약
     cleaned_rows = []
     titles_seen = []
     
@@ -340,7 +343,6 @@ def fetch_all_integrated_news():
             
     df_cleaned = pd.DataFrame(cleaned_rows)
 
-    # 학습 히스토리 가산점 반영
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
@@ -370,7 +372,7 @@ def save_selected_history(selected_df):
         pass
 
 # =========================================================
-# 💻 UI 메인 대시보드 화면 (3대 포털 통합 표)
+# 💻 UI 메인 대시보드 화면
 # =========================================================
 if "news_df" not in st.session_state:
     st.session_state["news_df"] = fetch_all_integrated_news()
@@ -405,7 +407,7 @@ if not raw_df.empty:
             auto_df.loc[selected_indices, "선택"] = True
             
         st.session_state["analyzed_df"] = auto_df
-        st.success("네이버 1순위 대표 기사 자동 체크 완료!")
+        st.success("네이버/로슈 브랜드 최상위 대표 기사 자동 체크 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
