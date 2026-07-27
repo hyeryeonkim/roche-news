@@ -5,7 +5,6 @@ import feedparser
 import re
 import os
 from datetime import datetime, timedelta
-from time import mktime
 from urllib.parse import quote
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -238,7 +237,7 @@ def fetch_naver_news(keyword):
                         "게재일": pub_dt.strftime('%m/%d'),
                         "pub_dt": pub_dt
                     })
-    except Exception as e:
+    except Exception:
         pass
     return results
 
@@ -324,7 +323,7 @@ def fetch_all_integrated_news():
                     if sim > 0.35:
                         bonus = round(sim * 2, 1)
                         df.iloc[idx, df.columns.get_loc("연관도점수")] = min(10, df.iloc[idx]["연관도점수"] + bonus)
-        except:
+        except Exception:
             pass
 
     # 정렬 (연관도점수 내림차순, 게재일 내림차순)
@@ -382,12 +381,11 @@ if not raw_df.empty:
             
             for idx, row in cat_df.iterrows():
                 title = row["기사제목"]
-                # 기존 선택된 기사와 제목 유사도가 높지 않을 때만 선별
                 is_duplicate = False
                 for s_title in selected_titles:
                     vec = TfidfVectorizer().fit_transform([title, s_title])
                     sim = cosine_similarity(vec[0:1], vec[1:2])[0][0]
-                    if sim > 0.55:  # 55% 이상 비슷하면 동일 보도자료로 판단하여 패스
+                    if sim > 0.55:  # 55% 이상 비슷하면 동일 보도자료로 판단
                         is_duplicate = True
                         break
                 
@@ -491,6 +489,7 @@ st.divider()
 with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클릭하여 열기)", expanded=False):
     if os.path.exists(HISTORY_FILE) and not history_df.empty:
         st.write(f"현재 총 **{len(history_df)}건**의 선택 데이터가 누적 저장되어 있습니다.")
+        st.caption("💡 지우고 싶은 기사의 '삭제 선택 ✅' 칸에 체크한 뒤, 아래 [🗑️ 선택한 항목만 삭제] 버튼을 누르세요.")
         
         history_df_edit = history_df.copy()
         history_df_edit.insert(0, "삭제 선택", False)
@@ -534,3 +533,4 @@ with st.expander("🧠 AI 학습용 데이터 관리 & 개별 삭제 센터 (클
                 st.success("모든 히스토리 데이터가 초기화되었습니다!")
                 st.rerun()
     else:
+        st.info("현재 축적된 AI 학습 데이터가 없습니다. 뉴스레터를 생성하면 선택된 기사가 여기에 저장됩니다.")
