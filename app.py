@@ -7,8 +7,8 @@ import os
 from datetime import datetime, timedelta
 from urllib.parse import quote, urlparse
 
-st.set_page_config(page_title="Roche Multi-Portal News Monitoring", layout="wide")
-st.title("📰 한국로슈 3대 포털(네이버/다음/구글) 통합 News Monitoring")
+st.set_page_config(page_title="Roche News Monitoring (Standard)", layout="wide")
+st.title("📰 한국로슈 3대 포털 뉴스 모니터링 (표준 통합 버전)")
 
 HISTORY_FILE = "selected_articles_history.csv"
 
@@ -18,61 +18,100 @@ NAVER_CLIENT_SECRET = "cxR2cC5hmC"
 CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
 
 # =========================================================
-# 🎯 로슈 핵심 브랜드 / 제품 리스트 (제목 노출 시 최상단 배치)
+# 🎯 [최종 확정] 카테고리별 마스터 키워드 데이터베이스
 # =========================================================
-CORE_ROCHE_BRANDS = [
-    "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
-    "오크레부스", "폴라이비", "컬럼비", "룬수미오", "페스코", "캐싸일라", "퍼제타", "허셉틴", "이토베비"
+
+# 1. Corporate News
+CORP_KEYWORDS = ["로슈", "Roche", "Genentech", "제넨텍", "제넨테크", "쥬가이", "Chugai", "한국로슈"]
+
+# 2. Product News (브랜드 & 성분명)
+PRODUCT_BRANDS = [
+    "티쎈트릭", "Tecentriq", "맙테라", "Mabthera", "알레센자", "Alecensa", "셀셉트", "Cellcept", 
+    "아바스틴", "Avastin", "타미플루", "Tamiflu", "조플루자", "Xofluza", "타쎄바", "Tarceva", 
+    "허셉틴", "Herceptin", "마도파", "Madopar", "퍼제타", "Perjeta", "캐싸일라", "Kadcyla", 
+    "가싸이바", "Gazyva", "폴라이비", "Polivy", "엔스프링", "Enspryng", "에브리스디", "Evrysdi", 
+    "로즐리트렉", "Rozlytrek", "바비스모", "Vabysmo", "서스비모", "Susvimo", "페스코", "Phesgo", 
+    "룬수미오", "Lunsumio", "오크레부스", "Ocrevus", "컬럼비", "Columvi", "엘레비디스", "Elevidys", 
+    "이토베비", "Itovebi", "피아스카이", "Piasky"
 ]
 
-PRIORITY_TRADE_MEDIA = [
-    "데일리팜", "청년의사", "데일리메디", "메디칼타임즈", "메디칼업저버", "메디파나뉴스", "팜뉴스", 
-    "의약뉴스", "의협신문", "의학신문", "KBR", "코리아헬스로그", "히트뉴스", "메디게이트뉴스", 
-    "메디소비자뉴스", "코메디닷컴", "메디팜스투데이", "약사공론", "e-의료정보", "메디칼트리뷴", 
-    "라포르시안", "후생신보", "약업신문", "더바이오", "바이오스펙테이터", "메디컬월드뉴스", 
-    "보건신문", "메디컬투데이", "메디코파마"
+PRODUCT_INGREDIENTS = [
+    "아테졸리주맙", "리툭시맙", "알렉티닙", "미코페놀레이트모페틸", "마이코페놀레이트", "베바시주맙", 
+    "발록사비르마르복실", "트라스투주맙", "퍼투주맙", "트라스투주맙 엠탄신", "오비누투주맙", "폴라투주맙", 
+    "사트랄리주맙", "리스디플람", "파리시맙", "라니비주맙", "모수네투주맙", "오크렐리주맙", "글로피타맙", 
+    "이나볼리십", "크로발리맙", "트론티네맙"
 ]
 
-CORPORATE_KEYSWORDS = [
-    "로슈", "Roche", "제넨텍", "주가이", "쥬가이", "한국로슈"
-]    
-
-PRODUCT_KEYWORDS = [
-    "티쎈트릭", "Tecentriq", "아테졸리주맙", "atezolizumab", "맙테라", "Mabthera", "리툭시맙", "Rituximab", 
-    "알레센자", "Alecensa", "알렉티닙", "alectinib", "셀셉트", "Cellcept", "미코페놀레이트모페틸", "마이코페놀레이트", 
-    "아바스틴", "AVASTIN", "베바시주맙", "Bevacizumab", "타미플루", "Tamiflu", "조플루자", "Xofluza", "발록사비르마르복실", 
-    "타쎄바", "타세바", "Tarceva", "허셉틴", "Herceptin", "트라스투주맙", "Trastuzumab", "마도파", "Madopar", 
-    "퍼제타", "Perjeta", "퍼투주맙", "Pertuzumab", "캐싸일라", "Kadcyla", "가싸이바", "Gazyva", "오비누투주맙", 
-    "폴리비", "폴라투주맙", "폴라이비", "엔스프링", "Enspryng", "사트랄리주맙", "에브리스디", "Evrysdi", "리스디플람", 
-    "로즐리트렉", "Rozlytrek", "바비스모", "vabysmo", "파리시맙", "faricimab", "서스비모", "Susvimo", "라니비주맙", 
-    "페스코", "페스고", "Phesgo", "모수네투주맙", "룬수미오", "오크레부스", "Ocrevus", "오크렐리주맙", "글로피타맙", 
-    "컬럼비", "엘레비디스", "엘리비디스", "이나볼리십", "이토베비", "피아스카이", "크로발리맙", "트론티네맙"
+PRODUCT_COMBO_FORM = [
+    "암질환심의위원회", "암질심", "중증질환", "면역항암제", "바이오의약품", "항체의약품", 
+    "이중항체", "세포치료제", "생물의약품", "바이오시밀러"
+]
+PRODUCT_COMBO_TARGETS = [
+    "로슈", "티쎈트릭", "허셉틴", "페스코", "캐싸일라", "퍼제타", "알레센자", 
+    "바비스모", "에브리스디", "엔스프링", "오크레부스", "폴라이비", "컬럼비", "룬수미오"
 ]
 
-DISEASE_KEYWORDS = [
-    "킴리아", "예스카타", "졸겐스마", "스핀라자", "오나셈노진아베파르보벡", "뉴시너센", "넥사바", "렌비마", 
-    "키트루다", "옵디보", "아일리아", "비오뷰", "루센티스", "아필리부", "아이델젠트", "알룬브릭", "로비큐아", 
-    "엔허투", "이뮤도", "임핀지", "림카토", "민쥬비", "척수성근위축증", "SMA", "신경근육질환", 
-    "시신경척수염", "NMOSD", "시신경척수염범주질환", "황반변성", "황반부종", "당뇨병성망막병증", "혈액암", 
-    "당뇨병성황반부종", "인플루엔자", "유방암", "간암", "간세포암", "비소세포폐암", "파킨슨", "대한종양내과학회", 
-    "신경과학회", "신경면역학회", "안과학회", "망막학회", "대한감염학회", "면역항암제", "항체의약품", "세포치료제", 
-    "DMD", "뒤센근이영양증", "듀센근이영양증", "DLBCL", "엡킨리", "다발성경화증", "티사브리", "렘트라다", 
-    "울토미리스", "Ultomiris", "라불리주맙", "Ravulizumab", "업리즈나", "이네빌리주맙", "티루캡", "피크레이", 
-    "조기암", "조기유방암", "젊은유방암"
+# 3. Disease / Market News
+COMPETITOR_BRANDS = [
+    "키트루다", "옵디보", "임핀지", "이뮤도", "엔허투", "아일리아", "루센티스", "비오뷰", "아필리부", 
+    "아이델젠트", "스핀라자", "졸겐스마", "울토미리스", "업리즈나", "킴리아", "예스카타", "넥사바", 
+    "렌비마", "알룬브릭", "로비큐아", "림카토", "민쥬비", "엡킨리", "앱킨리", "티사브리", "렘트라다", 
+    "티루캡", "피크레이", "CAR-T"
 ]
 
-INDUSTRY_KEYWORDS = [
-    "약평위", "암질심", "중증질환심의위원회", "심평원", "건보공단", "복지부", "식약처", "공정위", "보건복지위", "국정감사", "국감",
-    "KRPIA", "한국글로벌의약산업협회", "KOBIA", "한국바이오의약품협회", "한국제약바이오협회",
-    "약가협상", "약가인하", "약가제도", "경평면제", "위험분담제", "RSA", "경제성평가", "급여재평가", "GIFT", "허가평가협상",
-    "고가의약품", "초고가신약", "사전심의", "사용량-약가연동", "RWD", "RWE", "희귀난치성질환", "희귀난치질환", "희귀질환",
-    "혁신신약", "혁신형제약기업", "정밀의료", "정밀의학", "맞춤의학", "디지털헬스케어", "디지털바이오마커", "보건의료데이터", "신의료기술", "건보재정", "건강보험정책"
+COMPETITOR_INGREDIENTS = [
+    "펨브롤리주맙", "니볼루맙", "더발루맙", "트레멜리무맙", "트라스투주맙데룩스테칸", "애플리버셉트", 
+    "라니비주맙", "브롤루시주맙", "뉴시너센", "오나셈노진 아베파르보벡", "라불리주맙", "이네빌리주맙", 
+    "티사젠렉류셀", "악시캅타젠 시콜류셀", "소라페닙", "렌바티닙", "브리가티닙", "롤라티닙", 
+    "리툭시맙", "타파시타맙", "엡코리타맙", "나탈리주맙", "알렘투주맙", "카피바세르팁", "알펠리십"
 ]
 
+RARE_DISEASES = [
+    "척수성근위축증", "SMA", "시신경척수염", "NMOSD", "시신경척수염범주질환", "황반변성", 
+    "황반부종", "당뇨병성망막병증", "당뇨병성황반부종", "DLBCL", "소포성림프종", "DMD", 
+    "뒤센근이영양증", "듀센근이영양증", "다발성경화증"
+]
+
+COMMON_DISEASES = ["유방암", "간암", "간세포암", "비소세포폐암", "혈액암", "조기암", "파킨슨", "인플루엔자"]
+COMMON_DISEASE_TAILS = [
+    "연구", "연구결과", "임상", "허가", "급여", "약평위", "암질심", "치료제", "신약", "학회", 
+    "인터뷰", "대표", "사장", "전략", "출시", "포부", "시장", "환자", "투여", "제약", "바이오"
+]
+
+COMPETITOR_COMBO_TARGETS = [
+    "키트루다", "옵디보", "임핀지", "엔허투", "스핀라자", "아일리아", "킴리아", "졸겐스마", 
+    "유방암", "간암", "폐암", "혈액암", "SMA", "NMOSD", "DMD"
+]
+
+SOCIETIES = ["대한종양내과학회", "유방암학회", "신경과학회", "신경면역학회", "안과학회", "망막학회", "대한감염학회"]
+
+# 4. Industry / Policy News
+POLICY_SINGLE_KEYWORDS = [
+    "약평위", "암질심", "중증질환심의위원회", "심평원", "건보공단", "복지부", "식약처", "보건복지위", 
+    "국정감사", "국감", "KRPIA", "한국글로벌의약산업협회", "KOBIA", "약가협상", "약가인하", "약가제도", 
+    "경평면제", "위험분담제", "RSA", "경제성평가", "급여재평가", "고가의약품", "초고가신약", "사전심의", 
+    "사용량-약가연동", "RWD", "RWE", "혁신신약", "혁신형제약기업", "정밀의료", "정밀의학", "맞춤의학", 
+    "디지털헬스케어", "보건의료데이터", "신의료기술", "건보재정", "건강보험정책", "분산형임상", "DCT", 
+    "GIFT", "허평협", "허가평가협상"
+]
+
+GLOBAL_MNA_A = ["다국적", "글로벌", "외자사"]
+GLOBAL_MNA_B = ["제약사", "제약업계", "제약기업"]
+GLOBAL_MNA_C = ["인사", "동정", "수상", "CSR", "사회공헌", "인수", "합병", "리베이트"]
+
+PATIENT_GROUPS = ["환자단체총연합회", "백혈병환우회", "희귀난치성질환연합회", "환우회", "환자단체"]
+PATIENT_TAILS = ["항암제", "치료제", "탄원", "정책", "암", "희귀질환", "신약", "급여"]
+
+# 5. Negative (수집 차단)
 NEGATIVE_KEYWORDS = [
     "집값", "아파트", "부동산", "규제지역", "분양", "주택", "청약", "전세", 
-    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원"
+    "증시", "주가", "코스피", "코스닥", "상한가", "특징주", "목표가", "치과", "한의원", "결혼"
 ]
+
+# 수집 실행 쿼리
+SEARCH_KEYWORDS = list(set(
+    CORP_KEYWORDS + PRODUCT_BRANDS + COMPETITOR_BRANDS[:15] + RARE_DISEASES + POLICY_SINGLE_KEYWORDS[:15]
+))
 
 def calculate_jaccard_similarity(str1, str2):
     set1 = set(re.findall(r'\w+', str1.lower()))
@@ -100,7 +139,6 @@ def identify_media_name(link, original_link=""):
         "hankyung.com": "한국경제", "fnnews.com": "파이낸셜뉴스", "sedaily.co.kr": "서울경제",
         "mt.co.kr": "머니투데이", "edaily.co.kr": "이데일리"
     }
-    
     for d, name in mapping.items():
         if d in domain:
             return name
@@ -108,54 +146,59 @@ def identify_media_name(link, original_link=""):
     cleaned = domain.replace("www.", "").replace("m.", "").split(".")[0].capitalize()
     return cleaned if cleaned else "뉴스"
 
-def classify_article_by_rules(text):
+# 💡 스코어링 없이 순수 규칙 매칭으로 카테고리 100% 매핑
+def classify_article_strictly(text):
     text_lower = text.lower()
-    for p in PRODUCT_KEYWORDS:
+
+    # 1. Product News (자사 브랜드 / 성분명 / 자사 심의 조합)
+    for p in PRODUCT_BRANDS + PRODUCT_INGREDIENTS:
         if p.lower() in text_lower:
             return "Product News", p
 
-    if re.search(r"로슈|Roche|제넨텍|Genentech|쥬가이|Chugai", text, re.I):
-        return "Corporate News", "로슈(Roche)"
+    if any(f.lower() in text_lower for f in PRODUCT_COMBO_FORM) and any(t.lower() in text_lower for t in PRODUCT_COMBO_TARGETS):
+        return "Product News", "(자사 심의/제형 이슈)"
 
-    for ik in INDUSTRY_KEYWORDS:
-        if ik.lower() in text_lower:
-            return "Industry/ Policy News", ik
+    # 2. Corporate News (자사/본사 기업명)
+    for c in CORP_KEYWORDS:
+        if c.lower() in text_lower:
+            return "Corporate News", c
 
-    for dk in DISEASE_KEYWORDS:
-        if dk.lower() in text_lower:
-            return "Disease/ Market News", dk
+    # 3. Industry / Policy News (정책 단독 / 글로벌 M&A / 환자단체)
+    for pk in POLICY_SINGLE_KEYWORDS:
+        if pk.lower() in text_lower:
+            return "Industry/ Policy News", pk
 
-    if re.search(r"급여|접근성|보장성|보험|비급여|약가|심평원|식약처", text):
-        return "Industry/ Policy News", "(보건정책/급여)"
+    if any(a in text_lower for a in GLOBAL_MNA_A) and any(b in text_lower for b in GLOBAL_MNA_B) and any(c in text_lower for c in GLOBAL_MNA_C):
+        return "Industry/ Policy News", "(글로벌 M&A/동향)"
 
-    if re.search(r"암|질환|치료제|임상|학회|투여|적응증", text):
-        return "Disease/ Market News", "(질환/시장동향)"
+    if any(pg in text_lower for pg in PATIENT_GROUPS) and any(pt in text_lower for pt in PATIENT_TAILS):
+        return "Industry/ Policy News", "(환자단체/탄원)"
+
+    # 4. Disease / Market News (경쟁제, 희귀질환, 일반질환, 경쟁사 심의, 학회)
+    for cb in COMPETITOR_BRANDS + COMPETITOR_INGREDIENTS:
+        if cb.lower() in text_lower:
+            return "Disease/ Market News", cb
+
+    for rd in RARE_DISEASES:
+        if rd.lower() in text_lower:
+            return "Disease/ Market News", rd
+
+    if any(cd in text_lower for cd in COMMON_DISEASES) and any(cdt in text_lower for cdt in COMMON_DISEASE_TAILS):
+        return "Disease/ Market News", "(일반질환/동향)"
+
+    if "비소세포폐암" in text_lower and any(k in text_lower for k in ["면역항암제", "alk", "임상", "급여"]):
+        return "Disease/ Market News", "(폐암 서브타입)"
+
+    if "유방암" in text_lower and any(k in text_lower for k in ["her2", "조기유방암", "임상", "급여"]):
+        return "Disease/ Market News", "(유방암 서브타입)"
+
+    if any(f.lower() in text_lower for f in PRODUCT_COMBO_FORM) and any(ct.lower() in text_lower for ct in COMPETITOR_COMBO_TARGETS):
+        return "Disease/ Market News", "(경쟁사/질환 심의)"
+
+    if any(s in text_lower for s in SOCIETIES):
+        return "Disease/ Market News", "(학회 소식)"
 
     return None, None
-
-# 💡 스코어링 로직 강화 (로슈 제품명 제목 노출 시 무조건 최상위 가점)
-def calculate_relevance_score(title, summary, source_portal, media_name):
-    score = 5
-    full_text = f"{title} {summary}"
-
-    if re.search(r"컬럼비아\s*대|컬럼비아대|columbia\s*univ", full_text, re.I):
-        return 1
-    if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "식습관"]):
-        return 1
-
-    # 🏆 1. 로슈/핵심 제품명이 제목에 있는 경우 (+5점 최우선 가점)
-    if any(brand.lower() in title.lower() for brand in CORE_ROCHE_BRANDS):
-        score += 5
-
-    # 🏆 2. 주요 전문지 매체 가점 (+3점)
-    if media_name in PRIORITY_TRADE_MEDIA:
-        score += 3
-
-    # 🏆 3. 네이버 수집 기사 가점 (+2점)
-    if source_portal == "네이버":
-        score += 2
-
-    return max(1, min(score, 10))
 
 def fetch_naver_news(keyword, time_limit):
     results = []
@@ -186,24 +229,23 @@ def fetch_naver_news(keyword, time_limit):
                 if pub_dt < time_limit:
                     continue
 
-                media_name = identify_media_name(link, origin_link)
                 full_text = f"{title} {summary}"
                 if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
                     continue
 
-                matched_cat, matched_kw = classify_article_by_rules(full_text)
+                media_name = identify_media_name(link, origin_link)
+                matched_cat, matched_kw = classify_article_strictly(full_text)
+                
                 if matched_cat:
-                    score = calculate_relevance_score(title, summary, "네이버", media_name)
                     results.append({
                         "선택": False,
-                        "연관도점수": score,
                         "카테고리": matched_cat,
                         "출처포털": "네이버",
                         "매체명": media_name,
                         "검색키워드": matched_kw,
                         "기사제목": title,
                         "기사링크": origin_link if origin_link else link,
-                        "게재일": pub_dt.strftime('%m/%d'),
+                        "게재일": pub_dt.strftime('%m/%d %H:%M'),
                         "pub_dt": pub_dt
                     })
     except Exception:
@@ -217,7 +259,7 @@ def fetch_daum_news(keyword, time_limit):
     
     try:
         feed = feedparser.parse(rss_url)
-        for entry in feed.entries[:20]:
+        for entry in feed.entries[:15]:
             title = entry.get("title", "")
             link = entry.get("link", "")
             summary = entry.get("summary", "")
@@ -230,24 +272,23 @@ def fetch_daum_news(keyword, time_limit):
             if pub_dt < time_limit:
                 continue
 
-            media_name = identify_media_name(link)
             full_text = f"{title} {summary}"
             if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
                 continue
 
-            matched_cat, matched_kw = classify_article_by_rules(full_text)
+            media_name = identify_media_name(link)
+            matched_cat, matched_kw = classify_article_strictly(full_text)
+            
             if matched_cat:
-                score = calculate_relevance_score(title, summary, "다음", media_name)
                 results.append({
                     "선택": False,
-                    "연관도점수": score,
                     "카테고리": matched_cat,
                     "출처포털": "다음",
                     "매체명": media_name,
                     "검색키워드": matched_kw,
                     "기사제목": title,
                     "기사링크": link,
-                    "게재일": pub_dt.strftime('%m/%d'),
+                    "게재일": pub_dt.strftime('%m/%d %H:%M'),
                     "pub_dt": pub_dt
                 })
     except Exception:
@@ -261,7 +302,7 @@ def fetch_google_news(keyword, time_limit):
     
     try:
         feed = feedparser.parse(rss_url)
-        for entry in feed.entries[:15]:
+        for entry in feed.entries[:12]:
             title = entry.get("title", "")
             link = entry.get("link", "")
             summary = entry.get("summary", "")
@@ -277,24 +318,23 @@ def fetch_google_news(keyword, time_limit):
             if pub_dt < time_limit:
                 continue
 
-            media_name = identify_media_name(link)
             full_text = f"{title} {summary}"
             if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
                 continue
 
-            matched_cat, matched_kw = classify_article_by_rules(full_text)
+            media_name = identify_media_name(link)
+            matched_cat, matched_kw = classify_article_strictly(full_text)
+            
             if matched_cat:
-                score = calculate_relevance_score(title, summary, "구글", media_name)
                 results.append({
                     "선택": False,
-                    "연관도점수": score,
                     "카테고리": matched_cat,
                     "출처포털": "구글",
                     "매체명": media_name,
                     "검색키워드": matched_kw,
                     "기사제목": title,
                     "기사링크": link,
-                    "게재일": pub_dt.strftime('%m/%d'),
+                    "게재일": pub_dt.strftime('%m/%d %H:%M'),
                     "pub_dt": pub_dt
                 })
     except Exception:
@@ -319,8 +359,8 @@ def fetch_all_integrated_news():
     if df.empty:
         return df
 
-    # 네이버 기사 우선순위 정렬 후 중복 제거
-    df = df.sort_values(by=["출처포털", "연관도점수", "pub_dt"], ascending=[False, False, False])
+    # 네이버 수집 기사 우선 정렬 후 제목 중복 제거
+    df = df.sort_values(by=["출처포털", "pub_dt"], ascending=[False, False])
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
     # 유사 보도자료 중복 축약
@@ -340,20 +380,8 @@ def fetch_all_integrated_news():
             
     df_cleaned = pd.DataFrame(cleaned_rows)
 
-    if os.path.exists(HISTORY_FILE):
-        try:
-            history_df = pd.read_csv(HISTORY_FILE)
-            if len(history_df) >= 5 and "기사제목" in history_df.columns:
-                past_titles = history_df["기사제목"].dropna().tolist()
-                for idx, row in df_cleaned.iterrows():
-                    curr_title = row["기사제목"]
-                    max_sim = max([calculate_jaccard_similarity(curr_title, pt) for pt in past_titles], default=0)
-                    if max_sim > 0.35:
-                        df_cleaned.loc[idx, "연관도점수"] = min(10, df_cleaned.loc[idx, "연관도점수"] + round(max_sim * 2, 1))
-        except Exception:
-            pass
-
-    df_cleaned = df_cleaned.sort_values(by=["연관도점수", "pub_dt"], ascending=[False, False]).drop(columns=["pub_dt"])
+    # 단순 최신순 정렬 (pub_dt 내림차순)
+    df_cleaned = df_cleaned.sort_values(by=["pub_dt"], ascending=[False]).drop(columns=["pub_dt"])
     return df_cleaned
 
 def save_selected_history(selected_df):
@@ -369,7 +397,7 @@ def save_selected_history(selected_df):
         pass
 
 # =========================================================
-# 💻 UI 메인 대시보드 화면
+# 💻 UI 메인 대시보드 화면 (최신순 정돈 표)
 # =========================================================
 if "news_df" not in st.session_state:
     st.session_state["news_df"] = fetch_all_integrated_news()
@@ -396,15 +424,15 @@ if os.path.exists(HISTORY_FILE):
 st.write(f"⚡ 최근 36시간 포털(네이버/다음/구글) 통합 수집: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
 
 if not raw_df.empty:
-    if st.button("🎯 중요 기사 자동 선별하기 (카테고리별 상위 기사 자동 체크)", type="primary"):
+    if st.button("🎯 상위 최신 기사 자동 선별하기 (카테고리별 상위 5건 체크)", type="primary"):
         auto_df = raw_df.copy()
         for cat in CATEGORIES_LIST:
-            cat_df = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False)
+            cat_df = auto_df[auto_df["카테고리"] == cat]
             selected_indices = cat_df.index[:5]
             auto_df.loc[selected_indices, "선택"] = True
             
         st.session_state["analyzed_df"] = auto_df
-        st.success("네이버/로슈 브랜드 최상위 대표 기사 자동 체크 완료!")
+        st.success("카테고리별 최신 대표 기사 자동 체크 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
@@ -427,10 +455,9 @@ if not raw_df.empty:
                             required=True
                         ),
                         "출처포털": st.column_config.TextColumn("출처 🌐"),
-                        "연관도점수": st.column_config.NumberColumn("연관도 🎯"),
                         "기사링크": st.column_config.LinkColumn("기사링크")
                     },
-                    disabled=["연관도점수", "출처포털", "매체명", "검색키워드", "기사제목", "기사링크", "게재일"],
+                    disabled=["출처포털", "매체명", "검색키워드", "기사제목", "기사링크", "게재일"],
                     hide_index=True,
                     use_container_width=True,
                     key=f"editor_{cat}"
