@@ -7,8 +7,8 @@ import os
 from datetime import datetime, timedelta
 from urllib.parse import quote, urlparse
 
-st.set_page_config(page_title="Roche Daily News Monitoring (Trade Only)", layout="wide")
-st.title("📰 한국로슈 전문지(74개) 전용 Monitoring Dashboard")
+st.set_page_config(page_title="Roche Daily News Monitoring", layout="wide")
+st.title("📰 한국로슈 Daily News Monitoring Dashboard")
 
 HISTORY_FILE = "selected_articles_history.csv"
 
@@ -19,9 +19,9 @@ NAVER_CLIENT_SECRET = "cxR2cC5hmC"
 CATEGORIES_LIST = ["Corporate News", "Product News", "Disease/ Market News", "Industry/ Policy News"]
 
 # =========================================================
-# 🎯 74개 전문지 마스터 라인업 정의
+# 🎯 1순위 타깃 주요 전문지 마스터 라인업 (29개)
 # =========================================================
-TRACK_A_MEDIA = [
+PRIORITY_TRADE_MEDIA = [
     "데일리팜", "청년의사", "데일리메디", "메디칼타임즈", "메디칼업저버", "메디파나뉴스", "팜뉴스", 
     "의약뉴스", "의협신문", "의학신문", "KBR", "코리아헬스로그", "히트뉴스", "메디게이트뉴스", 
     "메디소비자뉴스", "코메디닷컴", "메디팜스투데이", "약사공론", "e-의료정보", "메디칼트리뷴", 
@@ -29,56 +29,8 @@ TRACK_A_MEDIA = [
     "보건신문", "메디컬투데이", "메디코파마"
 ]
 
-TRACK_B_MEDIA = {
-    "뉴스더보이스": "newsthevoice.com",
-    "메디포뉴스": "medifonews.com",
-    "현대건강신문": "hhealth.co.kr",
-    "식약신문": "fmnews.kr",
-    "의계신문(메드월드뉴스)": "medworld.co.kr",
-    "헬스오": "healtho.co.kr",
-    "바이오타임즈": "biotimes.co.kr",
-    "팍스메디컬뉴스": "paxmedicalnews.com"
-}
-
-TRACK_C_MEDIA = {
-    "병원신문": "http://www.khanews.com",
-    "의사신문": "http://www.doctorstimes.com",
-    "헬스코리아뉴스": "http://www.hkn24.com",
-    "파마타임스": "https://www.pharmatimes.co.kr",
-    "메디컬헤럴드": "http://www.medherald.co.kr",
-    "데일리메디팜": "http://www.dailymedipharm.com",
-    "건강보험신문": "https://www.gunbo.kr",
-    "건강보험저널": "https://hijournal.co.kr",
-    "닥터W": "http://www.doctorw.co.kr",
-    "메디팜헬스뉴스": "http://www.medipharmhealth.co.kr",
-    "메디칼통신": "https://www.medicalagency.co.kr",
-    "보건타임즈": "http://www.bktimes.net",
-    "사이언스엠디뉴스": "http://www.sciencemd.com",
-    "식약일보": "https://www.kfdn.co.kr",
-    "아이팜뉴스": "http://www.ipharmnews.com",
-    "의약품유통신문": "http://www.kpdanews.kr",
-    "엠디저널": "http://www.mdjournal.kr",
-    "헬스포커스뉴스": "http://www.healthfocus.co.kr",
-    "클리닉저널": "http://www.clinicjournal.co.kr",
-    "헬스앤라이프": "http://www.healthi.kr",
-    "파마투데이": "http://www.pharmatoday.co.kr",
-    "메디트리트저널": "https://www.mtjpost.com",
-    "메디텔레스코프뉴스": "https://www.meditelescope.co.kr",
-    "성인병뉴스": "https://www.cdpnews.co.kr",
-    "안티에이징뉴스": "https://medichacha.co.kr",
-    "엠디포스트": "http://www.mdpost.co.kr",
-    "한국식약경제신문": "http://www.kefm.co.kr",
-    "헬스앤마켓": "https://www.h-money.co.kr",
-    "웰스데일리": "http://www.wealthdaily.co.kr",
-    "메디팜뉴스": "http://www.medipharmnews.com",
-    "헬스비즈": "http://www.healthbiz.co.kr",
-    "뉴스맥": "http://www.newsmac.co.kr",
-    "키닥터": "http://www.keydoctor.co.kr",
-    "약품신문": "https://www.yakpum.co.kr"
-}
-
 # =========================================================
-# 🎯 수집 및 분류 키워드
+# 🎯 수집 및 분류 키워드 정의
 # =========================================================
 SEARCH_KEYWORDS = [
     "로슈", "Roche", "한국로슈", "티쎈트릭", "바비스모", "에브리스디", "엔스프링", 
@@ -167,16 +119,28 @@ def identify_media_name(link, original_link=""):
         "medicalworldnews.co.kr": "메디컬월드뉴스",
         "bokgunnews.com": "보건신문",
         "mdtoday.co.kr": "메디컬투데이",
-        "medicopharma.co.kr": "메디코파마"
+        "medicopharma.co.kr": "메디코파마",
+        "yna.co.kr": "연합뉴스",
+        "news1.kr": "뉴스1",
+        "newsis.com": "뉴시스",
+        "chosun.com": "조선일보",
+        "joongang.co.kr": "중앙일보",
+        "donga.com": "동아일보",
+        "hankookilbo.com": "한국일보",
+        "mk.co.kr": "매일경제",
+        "hankyung.com": "한국경제",
+        "fnnews.com": "파이낸셜뉴스",
+        "sedaily.co.kr": "서울경제",
+        "mt.co.kr": "머니투데이",
+        "edaily.co.kr": "이데일리"
     }
     
     for d, name in mapping.items():
         if d in domain:
             return name
             
-    # 네이버 제휴 매체 fallback
     cleaned = domain.replace("www.", "").replace("m.", "").split(".")[0].capitalize()
-    return cleaned if cleaned else "주요전문지"
+    return cleaned if cleaned else "주요언론사"
 
 def classify_article_by_rules(text):
     text_lower = text.lower()
@@ -204,35 +168,34 @@ def classify_article_by_rules(text):
     return None, None
 
 # =========================================================
-# 🎯 매체 트랙별 점수 차등 정책 (Track A: +5점 / Track B, C: -3점)
+# 🎯 스코어링 엔진 (주요 29개 전문지 +5점 최상단 노출)
 # =========================================================
-def calculate_relevance_score_by_track(title, summary, track_type):
-    # 기본 5점 시작
-    score = 5
-
-    # 🚫 노이즈 강력 감점
+def calculate_relevance_score(title, summary, media_name):
+    score = 5  # 기본 5점 시작
     full_text = f"{title} {summary}"
+
+    # 🚫 강력 감점
     if re.search(r"컬럼비아\s*대|컬럼비아대|columbia\s*univ", full_text, re.I):
         return 1
     if any(neg in full_text for neg in ["음식", "레시피", "여름철", "10계명", "운동법", "식습관"]):
         return 1
 
-    # 🏆 [수집 채널별 점수 차등 적용]
-    if track_type == "Track A":
-        score += 3  # 네이버 주요 제휴 전문지 (1순위 상단 노출)
-    elif track_type in ["Track B", "Track C"]:
-        score -= 3  # 구글/직접 크롤링 매체 (하순위 배치)
+    # 🏆 주요 전문지 우선 순위 보장 (+5점 가점)
+    if media_name in PRIORITY_TRADE_MEDIA:
+        score += 5
+    else:
+        score -= 2  # 일반지/기타 매체 하순위배치
 
-    # 직접 언급 가점
+    # 로슈 및 핵심 제품명 제목 노출 가점
     if any(k in title for k in ["로슈", "Roche", "티쎈트릭", "바비스모", "에브리스디", "약가", "급여", "암질심", "약평위"]):
         score += 1
 
     return max(1, min(score, 10))
 
 # =========================================================
-# 📡 1. Track A: 네이버 API 수집 (Priority 1)
+# 📡 네이버 뉴스 API 핵심 수집 엔진
 # =========================================================
-def fetch_track_a_news(keyword, time_limit):
+def fetch_naver_news(keyword, time_limit):
     results = []
     headers = {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -269,7 +232,7 @@ def fetch_track_a_news(keyword, time_limit):
 
                 matched_cat, matched_kw = classify_article_by_rules(full_text)
                 if matched_cat:
-                    score = calculate_relevance_score_by_track(title, summary, "Track A")
+                    score = calculate_relevance_score(title, summary, media_name)
                     results.append({
                         "선택": False,
                         "연관도점수": score,
@@ -286,123 +249,24 @@ def fetch_track_a_news(keyword, time_limit):
     return results
 
 # =========================================================
-# 📡 2. Track B: 구글 뉴스 site: 우회 수집
-# =========================================================
-def fetch_track_b_news(keyword, time_limit):
-    results = []
-    for media_name, domain in TRACK_B_MEDIA.items():
-        enc_kw = quote(f"site:{domain} {keyword}")
-        rss_url = f"https://news.google.com/rss/search?q={enc_kw}&hl=ko&gl=KR&ceid=KR:ko"
-        
-        try:
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:5]:
-                title = entry.get("title", "")
-                link = entry.get("link", "")
-                summary = entry.get("summary", "")
-                
-                if " - " in title:
-                    title = title.rsplit(" - ", 1)[0]
-
-                pub_dt = datetime.now()
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    from time import mktime
-                    pub_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
-
-                if pub_dt < time_limit:
-                    continue
-
-                full_text = f"{title} {summary}"
-                if any(neg in full_text for neg in NEGATIVE_KEYWORDS):
-                    continue
-
-                matched_cat, matched_kw = classify_article_by_rules(full_text)
-                if matched_cat:
-                    score = calculate_relevance_score_by_track(title, summary, "Track B")
-                    results.append({
-                        "선택": False,
-                        "연관도점수": score,
-                        "카테고리": matched_cat,
-                        "매체명": media_name,
-                        "검색키워드": matched_kw,
-                        "기사제목": title,
-                        "기사링크": link,
-                        "게재일": pub_dt.strftime('%m/%d'),
-                        "pub_dt": pub_dt
-                    })
-        except Exception:
-            pass
-    return results
-
-# =========================================================
-# 📡 3. Track C: 정규식 기반 직접 도메인 크롤링
-# =========================================================
-def fetch_track_c_news(time_limit):
-    results = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-
-    for media_name, target_url in TRACK_C_MEDIA.items():
-        try:
-            res = requests.get(target_url, headers=headers, timeout=3)
-            if res.status_code == 200:
-                html_text = res.text
-                pattern = r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
-                matches = re.findall(pattern, html_text, re.IGNORECASE | re.DOTALL)
-                
-                for href, title_raw in matches:
-                    title = re.sub(r'<[^>]+>', '', title_raw).strip()
-                    title = re.sub(r'\s+', ' ', title)
-                    
-                    if len(title) < 10 or any(ignore in href.lower() for ignore in ["javascript", "login", "banner", "bbs"]):
-                        continue
-
-                    full_url = href if href.startswith("http") else target_url.rstrip('/') + '/' + href.lstrip('/')
-                    
-                    matched_cat, matched_kw = classify_article_by_rules(title)
-                    if matched_cat:
-                        score = calculate_relevance_score_by_track(title, "", "Track C")
-                        results.append({
-                            "선택": False,
-                            "연관도점수": score,
-                            "카테고리": matched_cat,
-                            "매체명": media_name,
-                            "검색키워드": matched_kw,
-                            "기사제목": title,
-                            "기사링크": full_url,
-                            "게재일": datetime.now().strftime('%m/%d'),
-                            "pub_dt": datetime.now()
-                        })
-        except Exception:
-            pass
-    return results
-
-# =========================================================
-# 🚀 전문지 74개 통합 수집 엔진
+# 🚀 전체 뉴스 통합 수집 및 자동 중복 정돈
 # =========================================================
 @st.cache_data(ttl=1800)
-def fetch_all_trade_news():
+def fetch_all_integrated_news():
     all_raw = []
     time_limit = datetime.now() - timedelta(hours=36)
     
-    # 1. Track A (네이버 API 수집 - Priority 1) 전체 수집
     for kw in SEARCH_KEYWORDS:
-        all_raw.extend(fetch_track_a_news(kw, time_limit))
+        all_raw.extend(fetch_naver_news(kw, time_limit))
         
-    # 2. Track B (구글 site:) 보완 수집
-    for kw in SEARCH_KEYWORDS[:10]:
-        all_raw.extend(fetch_track_b_news(kw, time_limit))
-        
-    # 3. Track C (직접 크롤링) 보완 수집
-    all_raw.extend(fetch_track_c_news(time_limit))
-
     df = pd.DataFrame(all_raw)
     if df.empty:
         return df
 
-    # 완전 동일 기사 중복 제거
+    # 완전 동일 기사 중복 제거 (제목 기준)
     df = df.drop_duplicates(subset=["기사제목"], keep="first")
 
-    # 학습 히스토리 점수 가산
+    # 히스토리 가산점 반영
     if os.path.exists(HISTORY_FILE):
         try:
             history_df = pd.read_csv(HISTORY_FILE)
@@ -416,7 +280,7 @@ def fetch_all_trade_news():
         except Exception:
             pass
 
-    # 연관도 점수 순(내림차순) 및 게재일 순 정렬
+    # 연관도점수 내림차순 ➔ 주요 1순위 전문지 기사 최상단 정렬
     df = df.sort_values(by=["연관도점수", "pub_dt"], ascending=[False, False]).drop(columns=["pub_dt"])
     return df
 
@@ -436,13 +300,13 @@ def save_selected_history(selected_df):
 # 💻 UI 메인 대시보드 화면
 # =========================================================
 if "news_df" not in st.session_state:
-    st.session_state["news_df"] = fetch_all_trade_news()
+    st.session_state["news_df"] = fetch_all_integrated_news()
 
 col_title, col_btn = st.columns([4, 1])
 with col_btn:
-    if st.button("🔄 실시간 전문지 뉴스 새로고침"):
+    if st.button("🔄 실시간 뉴스 새로고침"):
         st.cache_data.clear()
-        st.session_state["news_df"] = fetch_all_trade_news()
+        st.session_state["news_df"] = fetch_all_integrated_news()
         st.session_state.pop("analyzed_df", None)
         st.rerun()
 
@@ -457,10 +321,10 @@ if os.path.exists(HISTORY_FILE):
     except Exception:
         pass
 
-st.write(f"⚡ 최근 36시간 통합 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
+st.write(f"⚡ 최근 36시간 네이버 포털 수집 완료: 최신 기사 **{len(raw_df)}건** | 🧠 AI 학습 데이터 축적: **{history_count}건**")
 
 if not raw_df.empty:
-    if st.button("🎯 중요 기사 자동 선별하기 (주요 매체 우선 선별)", type="primary"):
+    if st.button("🎯 중요 기사 자동 선별하기 (주요 전문지 우선 선별)", type="primary"):
         auto_df = raw_df.copy()
         for cat in CATEGORIES_LIST:
             cat_df = auto_df[auto_df["카테고리"] == cat].sort_values(by="연관도점수", ascending=False)
@@ -486,7 +350,7 @@ if not raw_df.empty:
             auto_df.loc[selected_indices, "선택"] = True
             
         st.session_state["analyzed_df"] = auto_df
-        st.success("네이버 1순위 주요 매체 우선 자동 선별 완료!")
+        st.success("주요 전문지 1순위 대표 기사 자동 선별 완료!")
 
     display_df = st.session_state.get("analyzed_df", raw_df)
     tabs = st.tabs([f"📌 {cat}" for cat in CATEGORIES_LIST])
